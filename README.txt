@@ -119,9 +119,8 @@ next to the exe).
 COMMAND-LINE OPTIONS
 
   -i <sec>, --interval=<sec>  seconds between samples (default 2)
-  --warn=<C>                  "hot" temperature, used for the hints and
+  --warn=<C>                  temperature that counts as hot, for the hints and
                               the calibration warning (default 85)
-  --hot=<C>                   currently unused (default 92)
   --gate=<pct>                CPU load below which it counts as idle (30)
   --amber=<pct>               orange below this speed % (default 85)
   --red=<pct>                 red below this speed % (default 70)

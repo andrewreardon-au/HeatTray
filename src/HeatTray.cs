@@ -70,7 +70,6 @@ internal static class HeatTray
     // ---- Tunables (settings.ini / command line) ----
     private static int IntervalMs = 2000;
     private static double WarnC = 85;      // temp >= this: amber
-    private static double HotC = 92;       // temp >= this: red
     private static double GateUtil = 30;   // CPU load % below which we call it "idle" and don't judge speed
     private static double AmberPct = 85;   // speed (% of the calibrated reference) below this: amber
     private static double RedPct = 70;     // ... below this: red
@@ -353,12 +352,16 @@ internal static class HeatTray
             }
         }
 
-        if (loaded)
+        // Only fully-loaded smoothing windows feed the trend: the ramp up from idle
+        // averages idle readings in and showed a fake "rising" (+479%).
+        bool steady = loaded;
+        foreach (double u in _utilRing) { if (u < GateUtil) steady = false; }
+        if (steady)
         {
             _trendRing.Enqueue(_smoothPerf);
             while (_trendRing.Count > TrendMax) _trendRing.Dequeue();
         }
-        else
+        else if (!loaded)
         {
             _trendRing.Clear();   // idle gaps would pollute the trend
         }
@@ -702,10 +705,6 @@ internal static class HeatTray
             {
                 if (TryNum(val, 30, 120, out d)) { WarnC = d; _anyCli = true; }
             }
-            else if (MatchOpt(args, ref i, null, "hot", out val))
-            {
-                if (TryNum(val, 30, 120, out d)) { HotC = d; _anyCli = true; }
-            }
             else if (MatchOpt(args, ref i, null, "gate", out val))
             {
                 if (TryNum(val, 5, 80, out d)) { GateUtil = d; _anyCli = true; }
@@ -729,8 +728,7 @@ internal static class HeatTray
                "Usage: HeatTray.exe [options]\r\n" +
                "\r\n" +
                "  -i <sec>,  --interval=<sec>  seconds between samples (default 2)\r\n" +
-               "  --warn=<C>                   hot temperature, used for advice only (default 85)\r\n" +
-               "  --hot=<C>                    very hot temperature, currently unused (default 92)\r\n" +
+               "  --warn=<C>                   temperature that counts as hot, for the hint (default 85)\r\n" +
                "  --gate=<pct>                 CPU load % below which it counts as idle (default 30)\r\n" +
                "  --amber=<pct>                amber when speed is below this % of reference (default 85)\r\n" +
                "  --red=<pct>                  red when speed is below this % of reference (default 70)\r\n" +
@@ -873,51 +871,95 @@ internal static class HeatTray
         }
     }
 
+    private const int DetailsWidth = 82;   // characters per line in the Details box
+
+    // "  Label:   value", with the value wrapped onto lines that hang under it.
+    private static void Row(StringBuilder sb, string label, string value)
+    {
+        string head = ("  " + label).PadRight(24);
+        string pad = new string(' ', head.Length);
+        string line = head;
+        bool first = true;
+        foreach (string word in value.Split(' '))
+        {
+            if (!first && line.Length + 1 + word.Length > DetailsWidth)
+            {
+                sb.AppendLine(line);
+                line = pad + word;
+            }
+            else
+            {
+                line += (first ? "" : " ") + word;
+            }
+            first = false;
+        }
+        sb.AppendLine(line);
+    }
+
+    // Plain paragraph wrapped to the box width.
+    private static void Para(StringBuilder sb, string text)
+    {
+        string line = "";
+        foreach (string word in text.Split(' '))
+        {
+            if (line.Length > 0 && line.Length + 1 + word.Length > DetailsWidth)
+            {
+                sb.AppendLine(line);
+                line = word;
+            }
+            else
+            {
+                line += (line.Length > 0 ? " " : "") + word;
+            }
+        }
+        if (line.Length > 0) sb.AppendLine(line);
+    }
+
     private static string DetailsText()
     {
         var sb = new StringBuilder();
         sb.AppendLine("NOW");
         if (_cPerf == null || _cUtil == null)
         {
-            sb.AppendLine("  CPU counters unavailable. Run HeatTray.exe --diag from a terminal.");
+            Row(sb, "", "CPU counters unavailable. Run HeatTray.exe --diag from a terminal.");
         }
         else
         {
-            double ghz = _ratedMhz > 0 ? _lastPerf / 100.0 * _ratedMhz / 1000.0 : double.NaN;
-            sb.AppendLine(string.Format("  CPU load:          {0:0}%", _lastUtil));
-            sb.AppendLine(string.Format("  Busy-core speed:   {0:0}% of rated{1}", _lastPerf,
-                double.IsNaN(ghz) ? "" : string.Format("  (~{0:0.0} GHz)", ghz)));
-            sb.AppendLine(string.Format("  Temperature:       {0}", double.IsNaN(_lastTempC) ? "not exposed by this machine" : string.Format("{0:0} C", _lastTempC)));
+            double ghz = Ghz(_lastPerf);
+            Row(sb, "CPU load:", string.Format("{0:0}%", _lastUtil));
+            Row(sb, "Busy-core speed:", string.Format("{0:0}% of rated{1}", _lastPerf,
+                double.IsNaN(ghz) ? "" : string.Format(" (~{0:0.0} GHz)", ghz)));
+            Row(sb, "Temperature:", double.IsNaN(_lastTempC) ? "not exposed by this machine" : string.Format("{0:0} C", _lastTempC));
             if (_speedPct >= 0)
             {
-                sb.AppendLine(string.Format("  Speed vs reference: {0:0}%", _speedPct));
-                sb.AppendLine(string.Format("  Estimated slowdown: ~{0:0}%", 100 - _speedPct));
+                Row(sb, "Speed vs reference:", string.Format("{0:0}%", _speedPct));
+                Row(sb, "Estimated slowdown:", string.Format("~{0:0}%", Math.Max(0, 100 - _speedPct)));
                 double tp = TrendPct();
                 if (double.IsNaN(tp))
                 {
-                    sb.AppendLine("  Trend (~5 min):    building (needs ~2 min of load)");
+                    Row(sb, "Trend (~5 min):", "building (needs ~2 min of steady load)");
                 }
                 else
                 {
                     double oldG = Ghz(_trendRing.ToArray()[0]), newG = Ghz(_smoothPerf);
-                    sb.AppendLine(string.Format("  Trend (~5 min):    {0} ({1:+0;-0;0}%{2})",
+                    Row(sb, "Trend (~5 min):", string.Format("{0} ({1:+0;-0;0}%{2})",
                         tp >= 3 ? "rising" : (tp <= -3 ? "falling" : "steady"), tp,
                         double.IsNaN(oldG) ? "" : string.Format(", ~{0:0.0} -> ~{1:0.0} GHz", oldG, newG)));
                 }
                 string adv = AdviceLong();
-                if (adv != null) sb.AppendLine("  Advice:            " + adv);
+                if (adv != null) Row(sb, "Advice:", adv);
             }
             else if (_calActive)
             {
-                sb.AppendLine("  Calibrating - keep the demo load running until the icon stops showing CAL.");
+                Row(sb, "Status:", "Calibrating - keep the demo load running until the icon stops showing CAL.");
             }
             else if (_loaded)
             {
-                sb.AppendLine("  Under load but no reference yet - right-click the icon > Calibrate to demo load...");
+                Row(sb, "Status:", "Under load but no reference yet - right-click the icon > Calibrate to demo load...");
             }
             else
             {
-                sb.AppendLine("  Idle (load below " + GateUtil.ToString("0") + "%): speed is not judged.");
+                Row(sb, "Status:", "Idle (load below " + GateUtil.ToString("0") + "%) - speed is not judged.");
             }
         }
         sb.AppendLine();
@@ -925,32 +967,30 @@ internal static class HeatTray
         if (_refPct > 0)
         {
             double rg = Ghz(_refPct);
-            sb.AppendLine(string.Format("  {0:0}% of rated{1}   set {2}", _refPct,
-                double.IsNaN(rg) ? "" : string.Format(" (~{0:0.0} GHz)", rg), _refDate));
-            sb.AppendLine(string.Format("  from {0} readings{1}", _refSamples,
-                double.IsNaN(_refMaxTemp) ? "" : string.Format(", peak temperature {0:0} C during calibration", _refMaxTemp)));
+            Row(sb, "Speed:", string.Format("{0:0}% of rated{1}", _refPct,
+                double.IsNaN(rg) ? "" : string.Format(" (~{0:0.0} GHz)", rg)));
+            Row(sb, "Set:", _refDate);
+            Row(sb, "From:", string.Format("{0} readings{1}", _refSamples,
+                double.IsNaN(_refMaxTemp) ? "" : string.Format(", peak temperature {0:0} C", _refMaxTemp)));
         }
         else
         {
-            sb.AppendLine("  none yet - right-click the icon > Calibrate to demo load...");
+            Row(sb, "", "none yet - right-click the icon > Calibrate to demo load...");
         }
-        if (_lastCalResult.Length > 0) sb.AppendLine("  Last calibration " + _lastCalResult);
+        if (_lastCalResult.Length > 0) Row(sb, "Last calibration:", _lastCalResult);
         sb.AppendLine();
-        sb.AppendLine("THRESHOLDS (colour is speed only)");
-        sb.AppendLine(string.Format("  Amber: speed < {0:0}% of reference", AmberPct));
-        sb.AppendLine(string.Format("  Red:   speed < {0:0}% of reference", RedPct));
+        sb.AppendLine("THRESHOLDS (the icon colour follows speed only)");
+        Row(sb, "Amber:", string.Format("speed below {0:0}% of reference", AmberPct));
+        Row(sb, "Red:", string.Format("speed below {0:0}% of reference", RedPct));
         sb.AppendLine();
         sb.AppendLine("HOW TO READ IT");
-        sb.AppendLine("  Speed near 100%:             ignore the temperature, carry on.");
-        sb.AppendLine(string.Format("  Speed < {0:0}% and >= {1:0} C:  act on cooling or workload.", AmberPct, WarnC));
-        sb.AppendLine(string.Format("  Speed low and under {0:0} C:  not heat - check power mode / AC power.", WarnC - 5));
-        sb.AppendLine("  The trend is the arrow in the tooltip and the Trend line above.");
-        sb.AppendLine("  Icon: speed % on top, GHz underneath. Grey = not judged.");
+        Row(sb, "Speed near 100%:", "ignore the temperature, carry on.");
+        Row(sb, string.Format("Slow, >= {0:0} C:", WarnC), "act on cooling or reduce the workload.");
+        Row(sb, string.Format("Slow, < {0:0} C:", WarnC - 5), "not heat - check the power mode / AC power.");
+        Row(sb, "Icon:", "speed % on top, GHz underneath. Grey = not judged.");
+        Row(sb, "Trend:", "the arrow in the tooltip and the Trend line above.");
         sb.AppendLine();
-        sb.AppendLine("The reference is the median busy-core speed over the last 2 minutes of a");
-        sb.AppendLine("5-minute calibration run (the settled speed, not the initial boost).");
-        sb.AppendLine("Calibrate again after changing the hardware,");
-        sb.AppendLine("power mode or what your demo load does.");
+        Para(sb, "The reference is the median busy-core speed over the last 2 minutes of a 5-minute calibration run (the settled speed, not the initial boost). Calibrate again after changing the hardware, power mode or what your demo load does.");
         return sb.ToString().Replace("\r\n", "\n").Replace("\n", "\r\n");
     }
 
@@ -964,19 +1004,19 @@ internal static class HeatTray
             form.MinimizeBox = false;
             form.MaximizeBox = false;
             form.ShowInTaskbar = false;
-            form.ClientSize = new Size(470, 400);
+            form.ClientSize = new Size(660, 520);
 
             var box = new TextBox
             {
-                Left = 12, Top = 12, Width = 446, Height = 340,
+                Left = 12, Top = 12, Width = 636, Height = 460,
                 Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
                 Font = new Font("Consolas", 9f),
                 Text = DetailsText(),
                 BackColor = SystemColors.Window
             };
-            var copyButton = new Button { Text = "Copy", Left = 288, Top = 362, Width = 80 };
+            var copyButton = new Button { Text = "Copy", Left = 478, Top = 482, Width = 80 };
             copyButton.Click += (s, e) => { try { Clipboard.SetText(box.Text); } catch { } };
-            var okButton = new Button { Text = "Close", Left = 378, Top = 362, Width = 80, DialogResult = DialogResult.OK };
+            var okButton = new Button { Text = "Close", Left = 568, Top = 482, Width = 80, DialogResult = DialogResult.OK };
 
             form.Controls.Add(box);
             form.Controls.Add(copyButton);
@@ -1009,7 +1049,6 @@ internal static class HeatTray
 
                 if (key == "interval" && TryNum(value, 1, 60, out d)) IntervalMs = (int)(d * 1000);
                 else if (key == "warn" && TryNum(value, 30, 120, out d)) WarnC = d;
-                else if (key == "hot" && TryNum(value, 30, 120, out d)) HotC = d;
                 else if (key == "gate" && TryNum(value, 5, 80, out d)) GateUtil = d;
                 else if (key == "amber" && TryNum(value, 10, 100, out d)) AmberPct = d;
                 else if (key == "red" && TryNum(value, 10, 100, out d)) RedPct = d;
@@ -1029,7 +1068,6 @@ internal static class HeatTray
             {
                 "interval=" + (IntervalMs / 1000),
                 "warn=" + WarnC.ToString(CultureInfo.InvariantCulture),
-                "hot=" + HotC.ToString(CultureInfo.InvariantCulture),
                 "gate=" + GateUtil.ToString(CultureInfo.InvariantCulture),
                 "amber=" + AmberPct.ToString(CultureInfo.InvariantCulture),
                 "red=" + RedPct.ToString(CultureInfo.InvariantCulture)
@@ -1043,8 +1081,8 @@ internal static class HeatTray
 
     private static TextBox AddRow(Form form, string label, string value, int top)
     {
-        form.Controls.Add(new Label { Text = label, Left = 15, Top = top + 3, Width = 190 });
-        var box = new TextBox { Text = value, Left = 210, Top = top, Width = 80 };
+        form.Controls.Add(new Label { Text = label, Left = 15, Top = top + 3, Width = 215 });
+        var box = new TextBox { Text = value, Left = 240, Top = top, Width = 80 };
         form.Controls.Add(box);
         return box;
     }
@@ -1058,17 +1096,22 @@ internal static class HeatTray
             form.StartPosition = FormStartPosition.CenterScreen;
             form.MinimizeBox = false;
             form.MaximizeBox = false;
-            form.ClientSize = new Size(310, 285);
+            form.ClientSize = new Size(335, 265);
 
             var intervalBox = AddRow(form, "Sample every (sec):", (IntervalMs / 1000).ToString(CultureInfo.InvariantCulture), 15);
-            var warnBox = AddRow(form, "Hot above (C) - advice only:", WarnC.ToString(CultureInfo.InvariantCulture), 47);
-            var hotBox = AddRow(form, "Very hot (C) - not used yet:", HotC.ToString(CultureInfo.InvariantCulture), 79);
-            var gateBox = AddRow(form, "Idle below CPU load (%):", GateUtil.ToString(CultureInfo.InvariantCulture), 111);
-            var amberBox = AddRow(form, "Amber below speed (% of reference):", AmberPct.ToString(CultureInfo.InvariantCulture), 143);
-            var redBox = AddRow(form, "Red below speed (% of reference):", RedPct.ToString(CultureInfo.InvariantCulture), 175);
+            var warnBox = AddRow(form, "Count as hot at (C):", WarnC.ToString(CultureInfo.InvariantCulture), 47);
+            var gateBox = AddRow(form, "Idle below CPU load (%):", GateUtil.ToString(CultureInfo.InvariantCulture), 79);
+            var amberBox = AddRow(form, "Amber below (% of reference):", AmberPct.ToString(CultureInfo.InvariantCulture), 111);
+            var redBox = AddRow(form, "Red below (% of reference):", RedPct.ToString(CultureInfo.InvariantCulture), 143);
 
-            var okButton = new Button { Text = "OK", Left = 120, Top = 235, Width = 80, DialogResult = DialogResult.OK };
-            var cancelButton = new Button { Text = "Cancel", Left = 210, Top = 235, Width = 80, DialogResult = DialogResult.Cancel };
+            form.Controls.Add(new Label
+            {
+                Text = "The icon colour follows speed only. \"Hot\" just changes the hint: slow and hot says Check cooling, slow and cool says Check power mode.",
+                Left = 15, Top = 180, Width = 305, Height = 48, ForeColor = SystemColors.GrayText
+            });
+
+            var okButton = new Button { Text = "OK", Left = 130, Top = 230, Width = 80, DialogResult = DialogResult.OK };
+            var cancelButton = new Button { Text = "Cancel", Left = 220, Top = 230, Width = 80, DialogResult = DialogResult.Cancel };
             form.Controls.Add(okButton);
             form.Controls.Add(cancelButton);
             form.AcceptButton = okButton;
@@ -1079,23 +1122,22 @@ internal static class HeatTray
                 return;
             }
 
-            double interval = 0, warn = 0, hot = 0, gate = 0, amber = 0, red = 0;
+            double interval = 0, warn = 0, gate = 0, amber = 0, red = 0;
             bool ok = TryNum(intervalBox.Text.Trim(), 1, 60, out interval) &&
                       TryNum(warnBox.Text.Trim(), 30, 120, out warn) &&
-                      TryNum(hotBox.Text.Trim(), 30, 120, out hot) &&
                       TryNum(gateBox.Text.Trim(), 5, 80, out gate) &&
                       TryNum(amberBox.Text.Trim(), 10, 100, out amber) &&
                       TryNum(redBox.Text.Trim(), 10, 100, out red);
 
-            if (!ok || warn > hot || red > amber)
+            if (!ok || red > amber)
             {
-                MessageBox.Show("Check the values: interval 1-60 s, temperatures 30-120 C (amber not above red), idle gate 5-80%, speeds 10-100% (red not above amber).",
+                MessageBox.Show("Check the values: interval 1-60 s, hot temperature 30-120 C, idle gate 5-80%, speeds 10-100% (red not above amber).",
                     "HeatTray", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
             IntervalMs = (int)(interval * 1000);
-            WarnC = warn; HotC = hot; GateUtil = gate; AmberPct = amber; RedPct = red;
+            WarnC = warn; GateUtil = gate; AmberPct = amber; RedPct = red;
             _timer.Interval = IntervalMs;
             SaveSettings();
             Sample();

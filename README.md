@@ -107,14 +107,14 @@ To pin it visibly: right-click the taskbar → **Taskbar settings** → **Other 
 
 ## Settings and command line
 
-Right-click the icon → **Settings...** (left-click opens **Details**) to change the sample interval, the idle threshold, the speed thresholds and the "hot" temperature. Changes apply immediately and are saved to `settings.ini` next to the exe.
+Right-click the icon → **Settings...** (left-click opens **Details**) to change the sample interval, the idle threshold, the speed thresholds and the temperature that counts as "hot". Changes apply immediately and are saved to `settings.ini` next to the exe.
 
 ```
-HeatTray.exe [-i <sec>] [--warn=<C>] [--hot=<C>] [--gate=<pct>]
+HeatTray.exe [-i <sec>] [--warn=<C>] [--gate=<pct>]
              [--amber=<pct>] [--red=<pct>] [--diag] [-h] [-v]
 ```
 
-`--warn` is the "hot" temperature used for the hints and the calibration warning (default 85). `--hot` is currently unused (kept for compatibility). With no options it uses the saved settings. With any option given, the command line wins and `settings.ini` is ignored (flags are never saved). `--diag` prints which counters work on this machine plus five live samples - run it first if something looks wrong on a colleague's PC.
+`--warn` is the temperature that counts as "hot", used for the hints and the calibration warning (default 85). With no options it uses the saved settings. With any option given, the command line wins and `settings.ini` is ignored (flags are never saved). `--diag` prints which counters work on this machine plus five live samples - run it first if something looks wrong on a colleague's PC.
 
 ## Limits worth knowing
 

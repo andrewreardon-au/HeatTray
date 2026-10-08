@@ -170,7 +170,10 @@ user whose workload is a known, repeatable demo. Now:
   Colour = speed only. Unjudged: grey raw % of rated, tag "Idle" or "Needs calibration".
 - **Icon = two lines** (speed % over GHz) drawn as `GraphicsPath` outlines scaled to fill a 32x32 bitmap
   (`RenderIcon`/`DrawFit`); calibrating shows `CAL` over the countdown in cyan. The "Show GHz" toggle is gone.
-- `HotC`/`--hot` is now unused (kept for settings compatibility); `WarnC` only drives advice and the
+- `HotC`/`--hot` were removed in v1.2 (colour is speed only); old `hot=` lines in settings.ini are ignored. `WarnC` only drives advice and the "got hot during calibration" warning. Last calibration outcome is kept in Details (balloons can be
   "got hot during calibration" warning. Last calibration outcome is kept in Details (balloons can be
   suppressed by Focus Assist). Sleep/resume mid-calibration is not handled (wall-clock window).
 - After a hardware / power-mode / AC-vs-battery / demo-load change: calibrate again.
+- Details popup: `Row()`/`Para()` helpers wrap to `DetailsWidth` (82 chars) with a hanging indent; the box is 636 px wide.
+  The trend ring only takes samples whose whole smoothing window is loaded (ramp-up from idle averaged in idle
+  readings and showed a fake "+479% rising").
