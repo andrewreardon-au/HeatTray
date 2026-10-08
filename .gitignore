@@ -1,0 +1,5 @@
+# Saved settings + learned baseline written next to the exe at runtime
+settings*.ini
+baseline*.ini
+dist/settings*.ini
+dist/baseline*.ini
