@@ -136,7 +136,7 @@ csc.exe /nologo /target:winexe /platform:x64 /out:dist\HeatTray.exe /win32icon:s
 
 `csc.exe` is the one bundled with .NET Framework 4 (`C:\Windows\Microsoft.NET\Framework64\v4.0.30319`). Or just run `build.ps1`.
 
-SHA-256 of the committed `dist/HeatTray.exe` (v1.2): `D82E8BE3DA2E443B5CC28BE15D994FA248AAE263A166B3C7BA0D4D262732B33A`
+SHA-256 of the committed `dist/HeatTray.exe` (v1.2): `1F38F0B33757DDFFE794CDFF2FA8921EC68829C88EFC509089164453E1453C6D`
 
 ## License
 
