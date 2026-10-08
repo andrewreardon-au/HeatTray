@@ -1,6 +1,6 @@
 # HeatTray
 
-**v1.1** — 2026-10-08
+**v1.2** — 2026-10-08
 **Author:** Andrew Reardon, andrewreardon@gmail.com
 
 A standalone Windows system tray app that shows how much slower the CPU is

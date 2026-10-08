@@ -1,40 +1,88 @@
 HEAT TRAY
 
-v1.1 -- 2026-10-08
+v1.2 -- 2026-10-09
 Author: Andrew Reardon, andrewreardon@gmail.com
 
-Shows, as a number in the system tray next to the clock, how much slower
-your CPU is running than it normally can -- so you know when heat is really
-costing you performance and when you can let it ride.
+Shows, in the system tray next to the clock, whether your CPU is really
+running slower than it can -- so you know when heat is costing you
+performance and when you can let it ride.
 
 
-WHAT THE NUMBER MEANS
+WHAT THE ICON SHOWS
 
-The number is your CPU's speed (while it is working) as a percentage of its
-normal speed at the same workload, learned while the computer was not hot.
-100 = as fast as it normally runs; lower means something -- heat, a power
-limit, battery, or a power mode -- is holding it back.
+The icon is two lines of text:
 
-  Green         Full speed or close, and not hot
-  Orange        Noticeably slowed, or getting hot (85 C and up)
-  Red           Heavily slowed, or very hot (92 C and up)
-  Light-grey    Idle -- shows the temperature in C, speed is not judged
-  number        (the tooltip says "Idle"). The same number appears, in
-                orange or red if hot, while a load level has no cool
-                baseline yet (the tooltip says "Learning")
-  Light-grey ?  CPU counters not available (see TROUBLESHOOTING)
+     87      speed: % of your reference (see CALIBRATE below)
+     2.9     current speed of the working cores, in GHz
 
-Hover over the icon for the exact numbers. Click it for a full breakdown,
-including an estimated slowdown (100 minus the number).
+The top number is your CPU's speed (while it is working) as a percentage
+of the reference you calibrated from your own demo workload. 100 = as fast
+as that workload normally runs; lower means something -- heat, a power
+limit, battery, or a power mode -- is holding it back. The COLOUR is about
+speed only, not temperature:
 
-  90-100   Little or no slowdown   -> let it ride
+  Green         At or near the reference speed (85% and up)
+  Orange        Noticeably slowed (under 85%)
+  Red           Heavily slowed (under 70%)
+  Grey          Not judged: the CPU is idle (load under 30%), or you have
+                not calibrated yet. The top number is then the raw speed
+                as a percentage of the CPU's rated speed.
+  Cyan CAL      Calibration in progress (with a countdown underneath)
+  Grey ?        CPU counters not available (see TROUBLESHOOTING)
+
+Hover over the icon for the details, for example:
+
+  Speed 87% 2.9GHz v | 91C | load 62% | Check cooling
+
+That is: speed, GHz, trend arrow (up, steady or down over about the last
+5 minutes of load), temperature, CPU load, and a hint:
+
+  OK                 Normal speed. Even if hot, you are not being slowed.
+  Check cooling      Slow AND hot (85 C+): airflow, dust, surface, or
+                     reduce the load.
+  Check power mode   Slow but NOT hot (under 80 C): not heat. Check the
+                     Windows power mode, AC power / charger, or a
+                     firmware power cap.
+  Heat or power cap  Slow and warm (80-85 C): could be either.
+  Idle / Needs calibration   Not judged (see above).
+
+Click the icon for a full breakdown (slowdown, trend, advice, and your
+reference).
+
+  90-100   Little or no slowdown   -> ignore the temperature, let it ride
   70-90    Mild to moderate        -> fine for bursts; improve airflow if
-                                      it stays here
-  under 70 Heavy                   -> sort out cooling now (clear vents,
-                                      use a stand, reduce the load)
+                                      it stays here AND it is hot
+  under 70 Heavy                   -> sort out cooling or power mode now
 
-A brief dip is normal. What matters is when it STAYS low while the
-temperature is at the top of its range.
+A brief dip is normal. What matters is when it STAYS low.
+
+
+CALIBRATE TO YOUR DEMO LOAD (DO THIS ONCE)
+
+HeatTray cannot know what "full speed" means for your workload until you
+show it. It measures your workload once, while the computer is cool, and
+judges everything against that.
+
+  1. Let the laptop cool (idle on a desk, normal ventilation, on AC power
+     in the power mode you demo in).
+  2. Start your full demo workload.
+  3. Right-click the icon, choose "Calibrate to demo load (5 min)...", OK.
+  4. Keep the workload running while the icon shows CAL and a countdown.
+     A notification (also recorded in Details) reports the result.
+
+Notes:
+  * The reference is the MEDIAN speed over the last 2 minutes of the 5 --
+    the speed your workload settles at. A cool CPU boosts harder for the
+    first minutes; judging against that would leave a healthy demo orange.
+  * If it reached 85 C or more during calibration you get a warning that
+    the reference may be low: let it cool and run it again.
+  * If you forgot to start the workload it fails with a message instead of
+    storing a bad reference.
+  * Calibrate again after changing hardware, power mode, AC vs battery, or
+    what the demo workload does. Until you calibrate the icon is grey and
+    the tooltip says "Needs calibration". "Clear reference..." forgets it.
+  * The reference is stored in baseline.ini next to the exe. It belongs to
+    one computer: do not copy it to another.
 
 
 GETTING STARTED
@@ -42,29 +90,8 @@ GETTING STARTED
   1. Double-click HeatTray.exe (in the dist folder).
   2. Don't see it? Click the small ^ arrow near the clock to show hidden
      tray icons.
-  3. To close it, right-click the icon and choose Exit.
-
-
-GETTING AN HONEST BASELINE
-
-HeatTray learns "normal speed" only from moments when the temperature is
-below the orange threshold (85 C by default), so it cannot learn "hot" as
-normal -- but a load level that has only ever been seen hot has no
-baseline and just shows the temperature while it learns. For a meaningful
-number:
-
-  1. Start with the laptop cool and well ventilated.
-  2. Right-click the icon and choose Reset baseline...
-  3. Run the HEAVY workload you want to be warned about (for example
-     your full demo load) for the first few minutes, so the heavy-load
-     bands learn what full speed is while the computer is still cool.
-
-Baselining only on light everyday work teaches only the light bands; the
-heavy bands would then learn "hot" the first time you run your demo.
-
-It keeps separate baselines for five load bands (light to heavy), because
-a heavy load is naturally slower than a light one. For the first minute at a
-given load the tooltip says "Learning baseline".
+  3. Calibrate (above).
+  4. To close it, right-click the icon and choose Exit.
 
 
 KEEPING IT ALWAYS VISIBLE
@@ -84,16 +111,17 @@ STARTING AUTOMATICALLY ON LOGIN
 SETTINGS
 
 Right-click the icon and choose Settings... to change how often it
-samples, the temperatures for orange and red, the idle threshold, and the
-speed thresholds. Changes apply immediately and are remembered
-(settings.ini next to the exe).
+samples, the "hot" temperature, the idle threshold and the speed
+thresholds. Changes apply immediately and are remembered (settings.ini
+next to the exe).
 
 
 COMMAND-LINE OPTIONS
 
   -i <sec>, --interval=<sec>  seconds between samples (default 2)
-  --warn=<C>                  orange at this temperature (default 85)
-  --hot=<C>                   red at this temperature (default 92)
+  --warn=<C>                  "hot" temperature, used for the hints and
+                              the calibration warning (default 85)
+  --hot=<C>                   currently unused (default 92)
   --gate=<pct>                CPU load below which it counts as idle (30)
   --amber=<pct>               orange below this speed % (default 85)
   --red=<pct>                 red below this speed % (default 70)
@@ -115,11 +143,12 @@ prints five live readings. Send that output along if something looks off.
   * Grey "?"        The CPU counters could not be opened. HeatTray needs an
                     English-language Windows for the counter names.
   * "no temp"       This computer does not expose a temperature sensor to
-                    Windows. Speed still works; colour then depends on
-                    speed alone.
+                    Windows. Speed still works; the hints just cannot use
+                    temperature.
   * Temperature     Windows' reading is often a few degrees different from
-                    the CPU's own sensor. Adjust the orange/red
-                    temperatures in Settings to suit.
+                    the CPU's own sensor. Adjust the "hot" temperature in
+                    Settings to suit.
+  * Grey, "Needs calibration"   You have not calibrated yet (above).
 
 
 LIMITS
@@ -127,14 +156,20 @@ LIMITS
 HeatTray measures the OUTCOME (slower clocks) and a coarse temperature. It
 cannot see inside the CPU's own power and thermal limits, so it can tell
 you THAT the CPU is running slow and how hot the machine is, but not
-whether heat, a firmware power cap, running on battery, or a Windows
-power mode such as "Best power efficiency" is the cause. Check those
-before blaming the cooling.
+for certain whether heat, a firmware power cap, running on battery, or a
+Windows power mode such as "Best power efficiency" is the cause. The hint
+is a rule of thumb. Check the power mode before blaming the cooling.
 
-Different workloads at the same total load can run at different speeds (a
-few busy cores boost higher than many), so the number can wobble by about
-10% even when cool. Read the trend together with the temperature. If it
-looks permanently off, use Reset baseline...
+The reference is only as good as the calibration: a different power mode,
+AC vs battery, or a workload that changes shape will make the number read
+wrongly until you calibrate again. Calibrating while it heats up and
+throttles gives a low reference (you get a warning if it reached 85 C).
+
+Grey readings (idle or not calibrated) show the raw percentage of the
+CPU's rated speed, which is a different scale from the judged number.
+
+A sleep or resume during a calibration can cut it short; just run it
+again.
 
 If Windows blocks the exe because it was copied from a network share or USB
 drive, right-click it, choose Properties, and tick Unblock. Or rebuild it on
@@ -144,8 +179,8 @@ the machine with build.ps1 (uses the compiler that ships with Windows).
 MOVING TO ANOTHER COMPUTER
 
 Copy the whole HeatTray folder anywhere and run dist\HeatTray.exe -- nothing
-else to install. The learned baseline is per computer (baseline.ini); do
-not copy it to a different machine, and reset the baseline on each one.
+else to install. Do not copy baseline.ini to a different machine; calibrate
+on each one.
 
 Right-click the tray icon and choose About HeatTray... for version and
 contact details.
