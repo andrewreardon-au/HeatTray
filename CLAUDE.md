@@ -128,10 +128,20 @@ No `?.`, no `$""` interpolation, no expression-bodied members, no
 
 - **Code signing.** Unsigned exe; see README for the Unblock / local rebuild
   workaround.
-- **Releases.** There is no GitHub release or tag yet (PingTray's pattern is a
-  release zip holding the exe, linked from the README as "latest release").
 
 ## Published (9 Oct 2026)
+
+- **Release v1.2** (tag `v1.2`, asset `HeatTray-v1.2.zip`, marked Latest). Recipe, same as
+  PingTray: annotated tag on the pushed commit (`git tag -a v1.2 -m "HeatTray v1.2"`,
+  `git push origin v1.2`); zip built FROM THE TAG with `git archive --format=zip -o
+  HeatTray-v1.2.zip v1.2` (the whole repo tree, text files with Windows line endings);
+  `gh release create v1.2 HeatTray-v1.2.zip --title "HeatTray v1.2" --notes-file notes.md
+  --verify-tag --latest`. Notes: intro, what is new, and the exe's SHA-256. Before
+  publishing, extract the zip and check its `dist\HeatTray.exe` hashes to the README's
+  SHA-256; afterwards download the release and check again. The README links
+  `releases/latest`. The version string is still 1.2: a release means bumping `Version`
+  and `VersionDate` in the source, rebuilding, updating the README headers and hash, and
+  tagging the new version.
 
 - Public repo: https://github.com/andrewreardon-au/HeatTray, branch `main`
   (renamed from `master`), created with `gh repo create ... --public --source .
