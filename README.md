@@ -119,6 +119,8 @@ Readings are smoothed over the last 5 samples. Above the idle threshold (30% loa
 | `build.ps1` | Rebuilds `dist/HeatTray.exe` from source on your own machine |
 | `make-icon.ps1` | Regenerates `src/HeatTray.ico` (only needed if you change the artwork) |
 
+No installer needed: [download the latest release zip](https://github.com/andrewreardon-au/HeatTray/releases/latest), extract, and run `dist\HeatTray.exe`.
+
 ## Getting started
 
 1. Double-click `dist\HeatTray.exe`.
