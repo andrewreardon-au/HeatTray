@@ -196,3 +196,43 @@ user whose workload is a known, repeatable demo. Now:
   reference exists). The user found "not judged" unclear, so all user-facing text (READMEs, Details, --diag)
   says what is actually happening instead: grey = "nothing to compare with" because the CPU is idle (it slows
   itself down on purpose) or there is no reference yet. Keep `judged` for identifiers/comments only.
+
+## 9 Oct (later): tooltip layout, ready reckoner, thermal-clamp finding
+
+- **Tooltip = short lines, not one long line** (supersedes the older `Speed N% X.XGHz [arrow] | temp | load | tag`
+  one-liner): `Speed N% X.XGHz [arrow]` / `temp | load N%` / `tag`, plus `Like <cpu> from <year>` when the reading
+  is judged and below AmberPct. Calibrating: `Calibrating m:ss left` / `temp | load N%` / `N readings`. The one-liner
+  was 290-402 px wide at 125% scaling and wrapped (the user saw it in the red state: "...| Check power mode" = 402 px).
+  Widest new line is 263 px at 200% scaling (measured with TextRenderer at 12/15/18/24 px = 100/125/150/200%).
+- `SetTooltip()` takes up to 127 chars (the shell's szTip limit) by setting the private `NotifyIcon.text` and calling
+  the private `UpdateIcon(true)` when `added` is true, because the public setter throws at 64. Falls back to 60 chars +
+  "...". Verified present on .NET 4.8.1; if a future runtime renames the members the fallback keeps it working.
+- **Ready reckoner** (`Reckoner(pct)`, tongue-in-cheek, requested by the user: "facetious but still informative,
+  like a 486-DX2-66 ... from 1993 i.e. the year the CPU debuted"): speed-vs-reference % -> a vintage CPU, nearest
+  centre on a log scale over `ReckonPct`/`ReckonName`/`ReckonYear`. Anchor: the user's normal speed (100%) counts as
+  a current laptop (3.0 GHz Zen 4 ~ 5 Skylake-GHz); each CPU estimated as clock x IPC vs Skylake. Specific models are
+  used so the year is that model's debut (Pentium 60 = 1993, 486 DX2-66 = 1992), not the family's. **Every rung is an
+  Intel CPU (the user's request) except the abacus ("from 2400 BC" - the user liked it).** Returns null when
+  not judged or at/above AmberPct. Shown as tooltip line 4 and as the Details "Feels like:" row ("<cpu> from <year> -
+  roughly Nx slower than normal"). "from" + year are joined with a no-break space `(char)0xA0` so any wrap falls before
+  "from". Order-of-magnitude only; README documents the ladder.
+- **Finding on the user's machine (laptop on a pillow):** the ACPI zone reached 95.9 C at 16% load, then firmware
+  pinned `% Processor Performance` at a flat 17% (~0.55 GHz) for 36+ s at 40-100% load while the temperature FELL
+  from 77 to 73 C; speed returned only at ~73 C and temperature then jumped 73 -> 83 C in 3 s. Windows saw none of it
+  (`% Performance Limit` 100, `Throttle Reasons` 0, no Kernel-Processor-Power event 37). **Consequence: `AdviceShort()`
+  (instant temperature) says "Check power mode" during the clamp, which is wrong (it is heat).** Proposed fix, NOT yet
+  done (awaiting the user's go-ahead): base the cooling-vs-power decision on the peak temperature of the last ~2 min.
+- Colour question raised by the user ("why is the percent red by the ghz grey"): the top line is coloured by the
+  speed verdict, the GHz line is always the neutral tone by design. Option offered: colour both lines the same.
+- **Verification tooling that now works** (screen capture was unavailable in earlier sessions): UIA read of the tray
+  button name (`SystemTray.NormalButton`; this Windows 11 tray is XAML) and `CopyFromScreen` after
+  `SetProcessDPIAware()` (without it a DPI-unaware PowerShell captures the wrong region on a scaled display).
+- **Fable adversarial review of this change set: SHIP, no material defects.** It built the source and drove the private
+  methods by reflection: the long-tooltip workaround on a visible icon (81-char tip retained, a later short tip via
+  the public setter works, failure falls back to 63 chars and still updates every tick), Reckoner edge cases
+  (NaN/Inf/0/AmberPct 10..100), de-DE formatting. Left alone on purpose: with "Amber below" set to 100 a 96-99%
+  reading says "~1x slower than normal" (non-default, cosmetic). Widest reckoner line = 190/242/295/392 px at
+  100/125/150/200% text scaling; if the tray's wrap limit turns out to be a fixed 300 px, 150% has a 5 px margin and
+  200% wraps before "from" (the no-break space makes that tidy). **Not yet seen visually:** the screen was locked
+  (LogonUI) during the hover test, but UI Automation confirmed the shell received all four lines (96 chars) on the
+  real pinned icon (forced via a temporary ref=400 baseline + --gate=5; the real baseline.ini was restored, hash-checked).

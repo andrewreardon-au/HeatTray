@@ -38,10 +38,17 @@ icon follows within a couple of seconds.
 
 Hover over the icon for the details, for example:
 
-  Speed 87% 2.9GHz v | 91C | load 62% | Check cooling
+  Speed 18% 0.6GHz v
+  77C | load 55%
+  Check power mode
+  Like a Pentium 4 2.4GHz from 2002
 
-That is: speed, GHz, trend arrow (up, steady or down over about the last
-5 minutes of load), temperature, CPU load, and a hint:
+That is, line by line: speed, GHz and a trend arrow (up, steady or down
+over about the last 5 minutes of load); temperature and CPU load; a hint;
+and, when the icon is orange or red, a tongue-in-cheek "ready reckoner"
+line (see THE READY RECKONER below). The lines are short on purpose: the
+Windows taskbar wraps long tray tooltips, so one long line wraps badly.
+The hints are:
 
   OK                 Normal speed. Even if hot, you are not being slowed.
   Check cooling      Slow AND hot (85 C+): airflow, dust, surface, or
@@ -62,6 +69,35 @@ reference).
   under 70 Heavy                   -> sort out cooling or power mode now
 
 A brief dip is normal. What matters is when it STAYS low.
+
+
+THE READY RECKONER
+
+When the icon is orange or red, the tooltip gets a "Like a ..." line (and
+Details gets a "Feels like" row) saying roughly which vintage of CPU your
+laptop is performing like right now, counting your normal speed as a
+current laptop, and the year that CPU debuted. It is tongue-in-cheek and
+single-thread only: an order-of-magnitude feel for "how bad is this", not
+a benchmark.
+
+  Speed (% of your normal)   Feels like
+  85 and up                  as intended (no line shown)
+  62-85                      a Core i5-4690 from 2014
+  46-62                      a Core i5-2500K from 2011
+  32-46                      a Core 2 Duo E8400 from 2008
+  21-32                      a Core 2 Duo E6600 from 2006
+  14-21                      a Pentium 4 2.4GHz from 2002
+  8.5-14                     a Pentium 4 1.8GHz from 2001
+  5-8.5                      a Pentium III 733 from 1999
+  1.9-5                      a Pentium II 400 from 1998
+  0.7-1.9                    a Pentium 166 from 1996
+  0.34-0.7                   a Pentium 60 from 1993
+  0.1-0.34                   a 486 DX2-66 from 1992
+  0.014-0.1                  a 386DX-16 from 1985
+  under 0.014                an abacus from 2400 BC
+
+The "orange below" threshold in Settings also decides when the line
+appears. It is not shown while the icon is grey (idle or not calibrated).
 
 
 CALIBRATE TO YOUR DEMO LOAD (DO THIS ONCE)
@@ -172,6 +208,13 @@ The reference is only as good as the calibration: a different power mode,
 AC vs battery, or a workload that changes shape will make the number read
 wrongly until you calibrate again. Calibrating while it heats up and
 throttles gives a low reference (you get a warning if it reached 85 C).
+
+A heat slowdown can outlast the heat. After a firmware thermal clamp the
+CPU can stay pinned at its lowest speed for 30-40 seconds while the
+temperature falls back below 80 C (seen on a laptop resting on a pillow:
+96 C, then about 0.5 GHz for 36+ seconds until it had cooled to about
+73 C). In that window the hint can say "Check power mode" even though heat
+caused it. If it was hot a minute ago, treat it as cooling.
 
 Grey readings (idle or not calibrated) show the raw percentage of the
 CPU's rated speed, which is a different scale from the coloured readings

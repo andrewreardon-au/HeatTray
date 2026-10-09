@@ -301,7 +301,7 @@ internal static class HeatTray
     {
         if (_cPerf == null || _cUtil == null)
         {
-            SetTooltip("HeatTray: CPU counters unavailable (run --diag)");
+            SetTooltip("HeatTray: no CPU counters\nrun HeatTray.exe --diag");
             ApplyIcon("?", null, Tone.Neutral, Tone.Neutral);
             return;
         }
@@ -429,6 +429,36 @@ internal static class HeatTray
         return null;
     }
 
+    // Ready reckoner (all Intel, at the user's request, except the abacus): roughly which vintage of CPU the current speed feels like, if this
+    // machine's normal speed (the reference, 100%) is taken as a current laptop. Rough
+    // single-thread comparison, order of magnitude only: for fun, not a benchmark.
+    // Centres are % of normal; the nearest one (on a log scale) wins.
+    private static readonly double[] ReckonPct = { 70, 55, 38, 27, 17, 11, 6.5, 3.5, 1.0, 0.45, 0.25, 0.04, 0.005 };
+    private static readonly string[] ReckonName = {
+        "a Core i5-4690", "a Core i5-2500K", "a Core 2 Duo E8400", "a Core 2 Duo E6600",
+        "a Pentium 4 2.4GHz", "a Pentium 4 1.8GHz", "a Pentium III 733", "a Pentium II 400",
+        "a Pentium 166", "a Pentium 60", "a 486 DX2-66", "a 386DX-16", "an abacus" };
+    // The year each of those CPUs debuted (same order).
+    private static readonly string[] ReckonYear = {
+        "2014", "2011", "2008", "2006", "2002", "2001", "1999", "1998", "1996", "1993", "1992", "1985", "2400 BC" };
+
+    // Null at or above the amber threshold (nothing to joke about) or when not judged.
+    private static string Reckoner(double pct)
+    {
+        if (pct < 0 || pct >= AmberPct) return null;
+        double p = Math.Max(pct, 0.01);
+        int best = 0;
+        double bestDist = double.MaxValue;
+        for (int i = 0; i < ReckonPct.Length; i++)
+        {
+            double dist = Math.Abs(Math.Log(p / ReckonPct[i]));
+            if (dist < bestDist) { bestDist = dist; best = i; }
+        }
+        // No-break spaces keep "from <year>" together if the shell has to wrap the line.
+        string nb = ((char)0xA0).ToString();
+        return ReckonName[best] + " from" + nb + ReckonYear[best].Replace(" ", nb);
+    }
+
     private static double Average(IEnumerable<double> xs)
     {
         double sum = 0; int n = 0;
@@ -445,7 +475,7 @@ internal static class HeatTray
         {
             int left = Math.Max(0, CalSeconds - (int)(DateTime.Now - _calStart).TotalSeconds);
             string mmss = string.Format("{0}:{1:00}", left / 60, left % 60);
-            SetTooltip(string.Format("Calibrating {0} left | {1} readings | {2} | {3}", mmss, _calSamples.Count, tempText, loadText));
+            SetTooltip(string.Format("Calibrating {0} left\n{1} | {2}\n{3} readings", mmss, tempText, loadText, _calSamples.Count));
             ApplyIcon("CAL", mmss, Tone.Cal, Tone.Neutral);
             return;
         }
@@ -474,7 +504,12 @@ internal static class HeatTray
             tag = (_loaded && _refPct <= 0) ? "Needs calibration" : "Idle";
         }
         string ghzText = double.IsNaN(g) ? "" : string.Format(" {0:0.0}GHz", g);
-        SetTooltip(string.Format("Speed {0}%{1}{2} | {3} | {4} | {5}", shown, ghzText, arrow, tempText, loadText, tag));
+        // Short lines, not one long one: the taskbar wraps long tray tooltips (the old
+        // one-liner, ~54 characters, wrapped at 125% scaling).
+        string tip = string.Format("Speed {0}%{1}{2}\n{3} | {4}\n{5}", shown, ghzText, arrow, tempText, loadText, tag);
+        string like = judged ? Reckoner(_speedPct) : null;
+        if (like != null) tip += "\nLike " + like;
+        SetTooltip(tip);
 
         // Judged: colour is about speed only (is heat actually slowing me down?);
         // temperature is in the tooltip. Not judged: grey (neutral), no verdict.
@@ -915,6 +950,10 @@ internal static class HeatTray
             {
                 Row(sb, "Speed vs reference:", string.Format("{0:0}%", _speedPct));
                 Row(sb, "Estimated slowdown:", string.Format("~{0:0}%", Math.Max(0, 100 - _speedPct)));
+                string like = Reckoner(_speedPct);
+                Row(sb, "Feels like:", like == null
+                    ? "as intended."
+                    : string.Format("{0} (~{1:0.#}x slower than normal)", like, 100 / Math.Max(_speedPct, 1)));
                 double tp = TrendPct();
                 if (double.IsNaN(tp))
                 {
@@ -970,6 +1009,7 @@ internal static class HeatTray
         Row(sb, string.Format("Slow, < {0:0} C:", WarnC - 5), "not heat - check the power mode / AC power.");
         Row(sb, "Icon:", "speed % on top, GHz underneath. Grey = idle or not calibrated yet (nothing to compare with).");
         Row(sb, "Trend:", "the arrow in the tooltip and the Trend line above.");
+        Row(sb, "Feels like:", "a tongue-in-cheek comparison that treats your normal speed as a current laptop. Order of magnitude only - not a benchmark.");
         sb.AppendLine();
         Para(sb, "The reference is the median busy-core speed over the last 2 minutes of a 5-minute calibration run (the settled speed, not the initial boost). Calibrate again after changing the hardware, power mode or what your demo load does.");
         return sb.ToString().Replace("\r\n", "\n").Replace("\n", "\r\n");
@@ -1131,12 +1171,27 @@ internal static class HeatTray
 
     private static void SetTooltip(string text)
     {
-        // NotifyIcon.Text throws if length >= 64.
-        if (text.Length > 63)
+        // NotifyIcon.Text throws at 64 characters (each newline counts as one) although the
+        // shell takes 127. For longer text set the private field and refresh the icon (the
+        // usual workaround); if that ever fails, fall back to truncating.
+        if (text.Length <= 63)
         {
-            text = text.Substring(0, 60) + "...";
+            _notifyIcon.Text = text;
+            return;
         }
-        _notifyIcon.Text = text;
+        if (text.Length > 127) text = text.Substring(0, 124) + "...";
+        try
+        {
+            typeof(NotifyIcon).GetField("text", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(_notifyIcon, text);
+            if ((bool)typeof(NotifyIcon).GetField("added", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(_notifyIcon))
+            {
+                typeof(NotifyIcon).GetMethod("UpdateIcon", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(_notifyIcon, new object[] { true });
+            }
+        }
+        catch
+        {
+            _notifyIcon.Text = text.Substring(0, 60) + "...";
+        }
     }
 
     // What a line of the icon is saying; each tone has a bright colour for a dark

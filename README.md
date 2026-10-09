@@ -30,10 +30,13 @@ The text colours follow the Windows taskbar theme: bright shades on a dark taskb
 **Hover** for the full picture, e.g.
 
 ```
-Speed 87% 2.9GHz ▼ | 91C | load 62% | Check cooling
+Speed 18% 0.6GHz ▼
+77C | load 55%
+Check power mode
+Like a Pentium 4 2.4GHz from 2002
 ```
 
-speed, GHz, trend arrow (▲ rising, ► steady, ▼ falling over about the last 5 minutes of load), temperature, CPU load, and a hint:
+Line by line: speed, GHz and a trend arrow (▲ rising, ► steady, ▼ falling over about the last 5 minutes of load); temperature and CPU load; a hint; and, when the icon is orange or red, a tongue-in-cheek [ready reckoner](#the-ready-reckoner) line. The tooltip is short lines on purpose: the Windows taskbar wraps long tray tooltips, so one long line wraps badly. The hints are:
 
 | Hint | Meaning |
 |---|---|
@@ -43,7 +46,7 @@ speed, GHz, trend arrow (▲ rising, ► steady, ▼ falling over about the last
 | Heat or power cap | Slow and warm (80-85 °C) - could be either; watch whether it gets hotter |
 | Idle / Needs calibration | The icon is grey: no comparison is being made (see Grey above) |
 
-Click the icon (or right-click → **Details...**) for the full breakdown: estimated slowdown, trend with GHz, the advice in a sentence, your reference and when it was set.
+Click the icon (or right-click → **Details...**) for the full breakdown: estimated slowdown, the ready-reckoner feel, trend with GHz, the advice in a sentence, your reference and when it was set.
 
 ### Rules of thumb
 
@@ -54,6 +57,29 @@ Click the icon (or right-click → **Details...**) for the full breakdown: estim
 | Under 70 | Heavy | Address cooling (or the power mode) now |
 
 A brief dip is normal. What matters is when it **stays** low.
+
+### The ready reckoner
+
+When the icon is orange or red, the tooltip gets a fourth line and Details gets a "Feels like" row saying roughly which vintage of CPU your laptop is performing like right now, counting your normal speed as a current laptop. It is tongue-in-cheek and single-thread only: an order-of-magnitude feel for *how bad is this*, not a benchmark.
+
+| Speed (% of your normal, approx.) | Feels like (and the year that CPU debuted) |
+|---|---|
+| 85 and up | as intended (no line shown) |
+| 62-85 | a Core i5-4690 from 2014 |
+| 46-62 | a Core i5-2500K from 2011 |
+| 32-46 | a Core 2 Duo E8400 from 2008 |
+| 21-32 | a Core 2 Duo E6600 from 2006 |
+| 14-21 | a Pentium 4 2.4GHz from 2002 |
+| 8.5-14 | a Pentium 4 1.8GHz from 2001 |
+| 5-8.5 | a Pentium III 733 from 1999 |
+| 1.9-5 | a Pentium II 400 from 1998 |
+| 0.7-1.9 | a Pentium 166 from 1996 |
+| 0.34-0.7 | a Pentium 60 from 1993 |
+| 0.1-0.34 | a 486 DX2-66 from 1992 |
+| 0.014-0.1 | a 386DX-16 from 1985 |
+| under 0.014 | an abacus from 2400 BC |
+
+The "orange below" threshold in Settings also decides when the line appears. It is not shown while the icon is grey (idle or not calibrated).
 
 ## Calibrate to your demo load (do this once)
 
@@ -122,6 +148,7 @@ HeatTray.exe [-i <sec>] [--warn=<C>] [--gate=<pct>]
 
 - It measures the **outcome** (slower clocks) and a coarse ACPI temperature, not the chip's internal power/thermal limits. It can't tell you *why* the CPU is slow - the hint is a rule of thumb from speed vs temperature. Firmware power caps (sustained TDP limits), **battery operation and Windows power modes (e.g. "Best power efficiency") all look identical to heat** from here.
 - The reference is only as good as the calibration: a different power mode, AC vs battery, or a demo load that changes shape will make the number read wrongly until you calibrate again. Calibrating while it heats up and throttles gives a low reference (you get a warning if it reached 85 °C).
+- **A heat slowdown can outlast the heat.** After a firmware thermal clamp the CPU can stay pinned at its lowest speed for 30-40 seconds while the temperature falls back below 80 °C (seen on a laptop resting on a pillow: 96 °C, then ~0.5 GHz for 36+ seconds until it had cooled to ~73 °C). In that window the hint can say "Check power mode" even though heat caused it. If it was hot a minute ago, treat it as cooling.
 - Grey readings (idle or not calibrated) show the raw % of the CPU's rated speed, which is a different scale from the coloured readings (% of your reference).
 - The light/dark choice follows the Windows system theme setting. With an unusual taskbar colour (a very light accent colour, high contrast) the icon text can be harder to read; the outline helps.
 - Some machines (desktops, some VMs) don't expose a thermal zone; speed still works, and the hints just can't use temperature. `Thermal Zone Information` also only has 1 K resolution and updates slowly.
@@ -139,7 +166,7 @@ csc.exe /nologo /target:winexe /platform:x64 /out:dist\HeatTray.exe /win32icon:s
 
 `csc.exe` is the one bundled with .NET Framework 4 (`C:\Windows\Microsoft.NET\Framework64\v4.0.30319`). Or just run `build.ps1`.
 
-SHA-256 of the committed `dist/HeatTray.exe` (v1.2): `119BBEA5FD978B94B3DBE77CDAFF22088CA272C85841FDC5F8854CD9D0DC7FD3`
+SHA-256 of the committed `dist/HeatTray.exe` (v1.2): `B7155EC9A60508FF068B691DCB5F8FB750A41647064FF29E94A7525696D99ECE`
 
 ## License
 
