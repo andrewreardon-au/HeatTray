@@ -1,6 +1,6 @@
 # HeatTray
 
-**v1.2** — 2026-10-08
+**v1.2** — 2026-10-09
 **Author:** Andrew Reardon, andrewreardon@gmail.com
 
 A standalone Windows system tray app that shows how much slower the CPU is
@@ -171,7 +171,6 @@ user whose workload is a known, repeatable demo. Now:
 - **Icon = two lines** (speed % over GHz) drawn as `GraphicsPath` outlines scaled to fill a 32x32 bitmap
   (`RenderIcon`/`DrawFit`); calibrating shows `CAL` over the countdown in cyan. The "Show GHz" toggle is gone.
 - `HotC`/`--hot` were removed in v1.2 (colour is speed only); old `hot=` lines in settings.ini are ignored. `WarnC` only drives advice and the "got hot during calibration" warning. Last calibration outcome is kept in Details (balloons can be
-  "got hot during calibration" warning. Last calibration outcome is kept in Details (balloons can be
   suppressed by Focus Assist). Sleep/resume mid-calibration is not handled (wall-clock window).
 - After a hardware / power-mode / AC-vs-battery / demo-load change: calibrate again.
 - Details popup: `Row()`/`Para()` helpers wrap to `DetailsWidth` (82 chars) with a hanging indent; the box is 636 px wide.
@@ -180,6 +179,20 @@ user whose workload is a known, repeatable demo. Now:
 - Icon text fill: each of the two lines gets 14.5 of the 32 px (0.75 px margins); `DrawFit` fills the box
   HEIGHT and squeezes horizontally (never below 60%) only when the text is too wide, so "100" is as tall as
   "92". Verified over 130 strings that no glyph touches the canvas edge. The 16-24 px tray is the real limit:
-  two lines cannot exceed ~7 px cap height at 100% scaling. The bottom (GHz) line is Gainsboro, which is weak
-  on a LIGHT taskbar (halo helps); a theme-aware colour (registry SystemUsesLightTheme) would fix it.
+  two lines cannot exceed ~7 px cap height at 100% scaling.
 - "Clear reference..." menu item removed (recalibrating overwrites; delete baseline.ini to forget it).
+- **Theme-aware icon colours.** `ApplyIcon` takes a `Tone` (Neutral/Good/Warn/Bad/Cal), not a `Color`;
+  `ToneColor(tone, light)` maps it to a bright colour for a dark taskbar (Gainsboro/LimeGreen/Orange/Red/Cyan,
+  dark halo) or a darker one for a light taskbar (35,35,35 / 0,130,0 / 205,100,0 / 200,0,0 / 0,120,170, white
+  halo). `IsLightTaskbar()` reads `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\
+  SystemUsesLightTheme` (the SYSTEM theme, not `AppsUseLightTheme`; dark when missing) on every redraw, so a
+  theme switch shows within one sample (polling, because `SystemEvents` raises on its own thread). Before this,
+  Gainsboro on a light taskbar was 1.4:1 contrast (GHz line and the grey idle number nearly invisible); now >= 3.5:1
+  on #F3F3F3. `RenderIcon(top, bottom, topTone, bottomTone, light)` takes `light` explicitly as the test seam:
+  do NOT flip the registry value to test (it changes the user's real desktop); render onto light backgrounds
+  instead. `--diag` prints "Taskbar theme: light|dark". This dev machine is dark (SystemUsesLightTheme=0,
+  ColorPrevalence=1 = maroon accent taskbar), so the light palette is only checked on rendered backgrounds.
+- **"Judged" is internal jargon**: it means "speed compared with the calibrated reference" (loaded AND a
+  reference exists). The user found "not judged" unclear, so all user-facing text (READMEs, Details, --diag)
+  says what is actually happening instead: grey = "nothing to compare with" because the CPU is idle (it slows
+  itself down on purpose) or there is no reference yet. Keep `judged` for identifiers/comments only.

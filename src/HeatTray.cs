@@ -302,7 +302,7 @@ internal static class HeatTray
         if (_cPerf == null || _cUtil == null)
         {
             SetTooltip("HeatTray: CPU counters unavailable (run --diag)");
-            ApplyIcon("?", null, Color.Gainsboro, Color.Gainsboro);
+            ApplyIcon("?", null, Tone.Neutral, Tone.Neutral);
             return;
         }
 
@@ -446,7 +446,7 @@ internal static class HeatTray
             int left = Math.Max(0, CalSeconds - (int)(DateTime.Now - _calStart).TotalSeconds);
             string mmss = string.Format("{0}:{1:00}", left / 60, left % 60);
             SetTooltip(string.Format("Calibrating {0} left | {1} readings | {2} | {3}", mmss, _calSamples.Count, tempText, loadText));
-            ApplyIcon("CAL", mmss, Color.Cyan, Color.Gainsboro);
+            ApplyIcon("CAL", mmss, Tone.Cal, Tone.Neutral);
             return;
         }
 
@@ -477,15 +477,15 @@ internal static class HeatTray
         SetTooltip(string.Format("Speed {0}%{1}{2} | {3} | {4} | {5}", shown, ghzText, arrow, tempText, loadText, tag));
 
         // Judged: colour is about speed only (is heat actually slowing me down?);
-        // temperature is in the tooltip. Not judged: grey, no verdict.
-        Color color = Color.Gainsboro;
+        // temperature is in the tooltip. Not judged: grey (neutral), no verdict.
+        Tone tone = Tone.Neutral;
         if (judged)
         {
-            color = _speedPct < RedPct ? Color.Red : (_speedPct < AmberPct ? Color.Orange : Color.LimeGreen);
+            tone = _speedPct < RedPct ? Tone.Bad : (_speedPct < AmberPct ? Tone.Warn : Tone.Good);
         }
         ApplyIcon(shown.ToString(CultureInfo.InvariantCulture),
             double.IsNaN(g) ? null : g.ToString("0.0", CultureInfo.InvariantCulture),
-            color, Color.Gainsboro);
+            tone, Tone.Neutral);
     }
 
     // ------------------------------------------------------------------
@@ -782,9 +782,10 @@ internal static class HeatTray
         var sb = new StringBuilder();
         sb.AppendLine("HeatTray " + Version + " --diag");
         sb.AppendLine("Rated CPU speed (registry ~MHz): " + (_ratedMhz > 0 ? _ratedMhz.ToString("0") + " MHz" : "unknown"));
-        sb.AppendLine("Counter '% Processor Performance': " + (_cPerf != null ? "OK" : "MISSING (needs an English-language Windows; speed cannot be judged)"));
+        sb.AppendLine("Counter '% Processor Performance': " + (_cPerf != null ? "OK" : "MISSING (needs an English-language Windows; speed cannot be read)"));
         sb.AppendLine("Counter load: " + (_cUtil != null ? "OK (" + _utilSource + ")" : "MISSING"));
         sb.AppendLine("Thermal zones: " + _cTemps.Count + (_cTemps.Count == 0 ? " (none exposed; temperature will be unavailable, speed still works)" : ""));
+        sb.AppendLine("Taskbar theme: " + (IsLightTaskbar() ? "light" : "dark") + " (sets the icon text colours)");
         sb.AppendLine();
         sb.AppendLine("Live samples (1s apart):");
         sb.AppendLine("  perf%   load%   temp");
@@ -939,7 +940,7 @@ internal static class HeatTray
             }
             else
             {
-                Row(sb, "Status:", "Idle (load below " + GateUtil.ToString("0") + "%) - speed is not judged.");
+                Row(sb, "Status:", "Idle (load below " + GateUtil.ToString("0") + "%). A CPU slows itself down when idle, so its speed is not compared with your reference.");
             }
         }
         sb.AppendLine();
@@ -967,7 +968,7 @@ internal static class HeatTray
         Row(sb, "Speed near 100%:", "ignore the temperature, carry on.");
         Row(sb, string.Format("Slow, >= {0:0} C:", WarnC), "act on cooling or reduce the workload.");
         Row(sb, string.Format("Slow, < {0:0} C:", WarnC - 5), "not heat - check the power mode / AC power.");
-        Row(sb, "Icon:", "speed % on top, GHz underneath. Grey = not judged.");
+        Row(sb, "Icon:", "speed % on top, GHz underneath. Grey = idle or not calibrated yet (nothing to compare with).");
         Row(sb, "Trend:", "the arrow in the tooltip and the Trend line above.");
         sb.AppendLine();
         Para(sb, "The reference is the median busy-core speed over the last 2 minutes of a 5-minute calibration run (the settled speed, not the initial boost). Calibrate again after changing the hardware, power mode or what your demo load does.");
@@ -1138,9 +1139,44 @@ internal static class HeatTray
         _notifyIcon.Text = text;
     }
 
-    private static void ApplyIcon(string top, string bottom, Color topColor, Color bottomColor)
+    // What a line of the icon is saying; each tone has a bright colour for a dark
+    // taskbar and a darker one for a light taskbar (see ToneColor).
+    private enum Tone { Neutral, Good, Warn, Bad, Cal }
+
+    private static Color ToneColor(Tone tone, bool light)
     {
-        Icon newIcon = RenderIcon(top, bottom, topColor, bottomColor);
+        switch (tone)
+        {
+            case Tone.Good: return light ? Color.FromArgb(0, 130, 0) : Color.LimeGreen;
+            case Tone.Warn: return light ? Color.FromArgb(205, 100, 0) : Color.Orange;
+            case Tone.Bad: return light ? Color.FromArgb(200, 0, 0) : Color.Red;
+            case Tone.Cal: return light ? Color.FromArgb(0, 120, 170) : Color.Cyan;
+            default: return light ? Color.FromArgb(35, 35, 35) : Color.Gainsboro;
+        }
+    }
+
+    // True when the Windows taskbar / tray is using the light theme (the system
+    // theme, not the apps theme). Dark when the setting is missing or unreadable.
+    private static bool IsLightTaskbar()
+    {
+        try
+        {
+            using (RegistryKey k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
+            {
+                object v = (k == null) ? null : k.GetValue("SystemUsesLightTheme");
+                return v is int && (int)v == 1;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void ApplyIcon(string top, string bottom, Tone topTone, Tone bottomTone)
+    {
+        // Read the theme on every redraw (cheap) so a Windows theme switch shows within a sample.
+        Icon newIcon = RenderIcon(top, bottom, topTone, bottomTone, IsLightTaskbar());
         Icon oldIcon = _currentIcon;
         _currentIcon = newIcon;
         _notifyIcon.Icon = newIcon;
@@ -1155,9 +1191,12 @@ internal static class HeatTray
 
     // Two lines of text (the bottom one optional) filling a 32x32 icon, like
     // the clock / language indicator beside it.
-    private static Icon RenderIcon(string top, string bottom, Color topColor, Color bottomColor)
+    private static Icon RenderIcon(string top, string bottom, Tone topTone, Tone bottomTone, bool light)
     {
         const int S = 32;
+        Color topColor = ToneColor(topTone, light), bottomColor = ToneColor(bottomTone, light);
+        // The halo is the opposite of the text: dark on a dark taskbar, light on a light one.
+        Color halo = light ? Color.FromArgb(190, 255, 255, 255) : Color.FromArgb(190, 15, 15, 15);
         using (var bmp = new Bitmap(S, S))
         {
             using (var g = Graphics.FromImage(bmp))
@@ -1166,13 +1205,13 @@ internal static class HeatTray
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 if (bottom == null)
                 {
-                    DrawFit(g, top, topColor, new RectangleF(1, 2, S - 2, S - 4));
+                    DrawFit(g, top, topColor, halo, new RectangleF(1, 2, S - 2, S - 4));
                 }
                 else
                 {
                     // Each line gets 14.5 of the 32 px (0.75 px margins), with a 1.5 px gap.
-                    DrawFit(g, top, topColor, new RectangleF(1, 0.75f, S - 2, 14.5f));
-                    DrawFit(g, bottom, bottomColor, new RectangleF(1, 16.75f, S - 2, 14.5f));
+                    DrawFit(g, top, topColor, halo, new RectangleF(1, 0.75f, S - 2, 14.5f));
+                    DrawFit(g, bottom, bottomColor, halo, new RectangleF(1, 16.75f, S - 2, 14.5f));
                 }
             }
 
@@ -1182,8 +1221,8 @@ internal static class HeatTray
     }
 
     // Draws text as an outline path scaled to fill the box (digits as tall as
-    // the box allows), with a thin dark halo so it reads on any taskbar.
-    private static void DrawFit(Graphics g, string text, Color color, RectangleF box)
+    // the box allows), with a thin halo so it reads on any taskbar.
+    private static void DrawFit(Graphics g, string text, Color color, Color halo, RectangleF box)
     {
         using (var path = new System.Drawing.Drawing2D.GraphicsPath())
         {
@@ -1202,7 +1241,7 @@ internal static class HeatTray
                 m.Translate(-(b.X + b.Width / 2f), -(b.Y + b.Height / 2f));
                 path.Transform(m);
             }
-            using (var pen = new Pen(Color.FromArgb(190, 15, 15, 15), 2f))
+            using (var pen = new Pen(halo, 2f))
             using (var brush = new SolidBrush(color))
             {
                 pen.LineJoin = System.Drawing.Drawing2D.LineJoin.Round;

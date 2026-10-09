@@ -24,11 +24,17 @@ speed only, not temperature:
   Green         At or near the reference speed (85% and up)
   Orange        Noticeably slowed (under 85%)
   Red           Heavily slowed (under 70%)
-  Grey          Not judged: the CPU is idle (load under 30%), or you have
-                not calibrated yet. The top number is then the raw speed
-                as a percentage of the CPU's rated speed.
+  Grey          Nothing to compare with, so no green/orange/red. Either the
+                CPU is idle (load under 30% - it slows itself down when
+                idle, which is normal) or you have not calibrated yet. The
+                top number is then the raw speed as a percentage of the
+                CPU's rated speed, not of your reference.
   Cyan CAL      Calibration in progress (with a countdown underneath)
   Grey ?        CPU counters not available (see TROUBLESHOOTING)
+
+The text colours follow the Windows taskbar theme: bright shades on a dark
+taskbar, darker shades on a light one. If you change the Windows theme the
+icon follows within a couple of seconds.
 
 Hover over the icon for the details, for example:
 
@@ -44,7 +50,8 @@ That is: speed, GHz, trend arrow (up, steady or down over about the last
                      Windows power mode, AC power / charger, or a
                      firmware power cap.
   Heat or power cap  Slow and warm (80-85 C): could be either.
-  Idle / Needs calibration   Not judged (see above).
+  Idle / Needs calibration   The icon is grey: no comparison is being
+                             made (see Grey above).
 
 Click the icon for a full breakdown (slowdown, trend, advice, and your
 reference).
@@ -61,7 +68,7 @@ CALIBRATE TO YOUR DEMO LOAD (DO THIS ONCE)
 
 HeatTray cannot know what "full speed" means for your workload until you
 show it. It measures your workload once, while the computer is cool, and
-judges everything against that.
+compares everything against that.
 
   1. Let the laptop cool (idle on a desk, normal ventilation, on AC power
      in the power mode you demo in).
@@ -73,7 +80,7 @@ judges everything against that.
 Notes:
   * The reference is the MEDIAN speed over the last 2 minutes of the 5 --
     the speed your workload settles at. A cool CPU boosts harder for the
-    first minutes; judging against that would leave a healthy demo orange.
+    first minutes; comparing against that would leave a healthy demo orange.
   * If it reached 85 C or more during calibration you get a warning that
     the reference may be low: let it cool and run it again.
   * If you forgot to start the workload it fails with a message instead of
@@ -137,8 +144,9 @@ TROUBLESHOOTING
 
 Open a terminal in the dist folder and run:   HeatTray.exe --diag
 
-That lists which Windows counters are available on this computer and
-prints five live readings. Send that output along if something looks off.
+That lists which Windows counters are available on this computer, the
+taskbar theme it detected (light or dark), and prints five live readings.
+Send that output along if something looks off.
 
   * Grey "?"        The CPU counters could not be opened. HeatTray needs an
                     English-language Windows for the counter names.
@@ -166,7 +174,12 @@ wrongly until you calibrate again. Calibrating while it heats up and
 throttles gives a low reference (you get a warning if it reached 85 C).
 
 Grey readings (idle or not calibrated) show the raw percentage of the
-CPU's rated speed, which is a different scale from the judged number.
+CPU's rated speed, which is a different scale from the coloured readings
+(a percentage of your reference).
+
+The light/dark choice follows the Windows system theme setting. With an
+unusual taskbar colour (a very light accent colour, high contrast) the icon
+text can be harder to read; the outline helps.
 
 A sleep or resume during a calibration can cut it short; just run it
 again.
