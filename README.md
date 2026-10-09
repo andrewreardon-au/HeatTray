@@ -7,21 +7,22 @@ Shows, in the system tray, whether your CPU is actually running slower than it c
 
 ## What the icon shows
 
-The icon is two lines of text:
+One big number, so it can be read at a glance:
 
 ```
- 87     <- speed: % of your reference (see "Calibrate" below)
- 2.9    <- current busy-core speed in GHz
+ 98     <- speed: % of your reference (see "Calibrate" below)
 ```
 
-**Speed** is your CPU's busy-core speed as a % of the reference you calibrated from your own demo load (100 = as fast as that load normally runs). Lower means something - heat, a power limit, battery, a power mode - is holding it back. The colour of the number is about **speed only**, not temperature:
+What it says is your choice: **Settings → Icon shows** has **Percent** (the default), **GHz** (the current busy-core speed, e.g. `3.2`) or **Both** (percent over GHz on two lines, with smaller digits). The tooltip always has both. From the command line: `--show=percent|ghz|both`.
+
+**Speed** is your CPU's busy-core speed as a % of the reference you calibrated from your own demo load: 100 = as fast as that load normally runs, and above 100 = faster than it ran during calibration. Lower means something - heat, a power limit, battery, a power mode - is holding it back. The colour of the number is about **speed only**, not temperature:
 
 | Icon | Meaning |
 |---|---|
-| 🟢 Green | At or near the reference speed (85%+ by default) |
-| 🟠 Orange | Noticeably slowed (under 85%) |
-| 🔴 Red | Heavily slowed (under 70%) |
-| ⚪ Grey | Nothing to compare with, so no green/orange/red. Either the CPU is idle (load under 30% - it slows itself down when idle, which is normal) or you haven't calibrated yet. The top number is then the raw speed as a % of the CPU's rated speed, not of your reference |
+| 🟢 Green | At or near the reference speed, or better (85%+ by default). Also shown while the CPU is idle, so the icon doesn't change colour every time the load dips |
+| 🟠 Orange | Noticeably slowed (under 85%) while the CPU is working |
+| 🔴 Red | Heavily slowed (under 70%) while the CPU is working |
+| ⚪ Grey | No verdict. Either you haven't calibrated yet (there is nothing to take a percentage of, so the icon shows the speed in GHz), or the CPU is idle and its speed is under 85% of your reference. An idle CPU slows itself down on purpose, so an idle reading is never orange or red |
 | 🔵 Cyan `CAL` / countdown | Calibration in progress |
 | ⚪ Grey "?" | CPU counters unavailable - run `HeatTray.exe --diag` |
 
@@ -44,7 +45,7 @@ Line by line: speed, GHz and a trend arrow (▲ rising, ► steady, ▼ falling 
 | Check cooling | Slow **and** hot (85 °C+) - airflow, dust, surface, or reduce the load. "(peaked 96C)" means it is no longer that hot but was within the last 2 minutes: a heat slowdown can outlast the heat |
 | Check power mode | Slow but **not** hot (under 80 °C, and not that hot at any point in the last 2 minutes) - not heat: check the Windows power mode, AC power / charger wattage, or a firmware power cap |
 | Heat or power cap | Slow and warm (80-85 °C, now or within the last 2 minutes) - could be either; watch whether it gets hotter |
-| Idle / Needs calibration | The icon is grey: no comparison is being made (see Grey above) |
+| Idle / Needs calibration | No verdict is being made: idle (the icon stays green, or goes grey if the speed is low) or not calibrated yet (grey GHz). See Grey above |
 
 Click the icon (or right-click → **Details...**) for the full breakdown: the temperature and its 2-minute peak, estimated slowdown, the ready-reckoner feel, trend with GHz, the advice in a sentence, your reference and when it was set.
 
@@ -52,7 +53,7 @@ Click the icon (or right-click → **Details...**) for the full breakdown: the t
 
 | Speed shown | Roughly | What to do |
 |---|---|---|
-| 90-100 | Little or no slowdown | Ignore the temperature, let it ride |
+| 90 and up | Little or no slowdown | Ignore the temperature, let it ride |
 | 70-90 | Mild to moderate | Fine for bursts; if it stays here **and** it's hot, improve airflow |
 | Under 70 | Heavy | Address cooling (or the power mode) now |
 
@@ -79,7 +80,7 @@ When the icon is orange or red, the tooltip gets a fourth line and Details gets 
 | 0.014-0.1 | a 386DX-16 from 1985 |
 | under 0.014 | an abacus from 2400 BC |
 
-The "orange below" threshold in Settings also decides when the line appears. It is not shown while the icon is grey (idle or not calibrated).
+The "orange below" threshold in Settings also decides when the line appears. It is not shown while the CPU is idle or you haven't calibrated yet.
 
 ## Calibrate to your demo load (do this once)
 
@@ -106,7 +107,7 @@ It reads three standard Windows performance counters - no drivers, no admin righ
 - `Processor Information → % Processor Time` - how busy the CPU is (deliberately *not* `% Processor Utility`, which is itself scaled by clock speed and would hide a hard throttle by making a busy CPU look idle).
 - `Thermal Zone Information → Temperature` - the hottest ACPI thermal zone.
 
-Readings are smoothed over the last 5 samples. Above the idle threshold (30% load) the speed is compared with the reference.
+Readings are smoothed over the last 5 samples. Above the idle threshold (30% load) the speed is compared with the reference and coloured green, orange or red. Below it the same percentage is shown, green (or grey if it is low) and never orange or red.
 
 ## What's in this repo
 
@@ -135,21 +136,22 @@ To pin it visibly: right-click the taskbar → **Taskbar settings** → **Other 
 
 ## Settings and command line
 
-Right-click the icon → **Settings...** (left-click opens **Details**) to change the sample interval, the idle threshold, the speed thresholds and the temperature that counts as "hot". Changes apply immediately and are saved to `settings.ini` next to the exe.
+Right-click the icon → **Settings...** (left-click opens **Details**) to change what the icon shows (percent, GHz or both), the sample interval, the idle threshold, the speed thresholds and the temperature that counts as "hot". Changes apply immediately and are saved to `settings.ini` next to the exe.
 
 ```
 HeatTray.exe [-i <sec>] [--warn=<C>] [--gate=<pct>]
-             [--amber=<pct>] [--red=<pct>] [--diag] [-h] [-v]
+             [--amber=<pct>] [--red=<pct>] [--show=percent|ghz|both]
+             [--diag] [-h] [-v]
 ```
 
-`--warn` is the temperature that counts as "hot", used for the hints and the calibration warning (default 85). With no options it uses the saved settings. With any option given, the command line wins and `settings.ini` is ignored (flags are never saved). `--diag` prints which counters work on this machine, the taskbar theme it detected, plus five live samples - run it first if something looks wrong on a colleague's PC.
+`--warn` is the temperature that counts as "hot", used for the hints and the calibration warning (default 85). `--show` is what the icon shows: `percent` (the default), `ghz` or `both`. With no options it uses the saved settings. With any option given, the command line wins and `settings.ini` is ignored (flags are never saved). `--diag` prints which counters work on this machine, the taskbar theme it detected, what the icon is set to show, plus five live samples - run it first if something looks wrong on a colleague's PC.
 
 ## Limits worth knowing
 
 - It measures the **outcome** (slower clocks) and a coarse ACPI temperature, not the chip's internal power/thermal limits. It can't tell you *why* the CPU is slow - the hint is a rule of thumb from speed vs temperature. Firmware power caps (sustained TDP limits), **battery operation and Windows power modes (e.g. "Best power efficiency") all look identical to heat** from here.
 - The reference is only as good as the calibration: a different power mode, AC vs battery, or a demo load that changes shape will make the number read wrongly until you calibrate again. Calibrating while it heats up and throttles gives a low reference (you get a warning if it reached 85 °C).
 - **A heat slowdown can outlast the heat.** After a firmware thermal clamp the CPU can stay pinned at its lowest speed for 30-40 seconds while the temperature falls back below 80 °C (seen on a laptop resting on a pillow: 96 °C, then ~0.5 GHz for 36+ seconds until it had cooled to ~73 °C). So the hints go by the hottest temperature of the last 2 minutes, not just the current one, and say so (`Check cooling (peaked 96C)`). A clamp that outlasts those 2 minutes can still read as "Check power mode"; if it was hot a few minutes ago, treat it as cooling.
-- Grey readings (idle or not calibrated) show the raw % of the CPU's rated speed, which is a different scale from the coloured readings (% of your reference).
+- Until you calibrate there is no percentage to show, so the icon shows the speed in GHz (grey) and the tooltip's "Speed N%" is then a % of the CPU's *rated* speed, a different scale from the coloured readings (% of your reference). While idle the icon shows the same percentage as under load, but it is never orange or red, because an idle CPU slows itself down on purpose.
 - The light/dark choice follows the Windows system theme setting. With an unusual taskbar colour (a very light accent colour, high contrast) the icon text can be harder to read; the outline helps.
 - Some machines (desktops, some VMs) don't expose a thermal zone; speed still works, and the hints just can't use temperature. `Thermal Zone Information` also only has 1 K resolution and updates slowly.
 - The Windows counter names are **English-only**: on a non-English Windows the counters fail to open and the icon shows a grey "?". `--diag` will say so.
@@ -166,7 +168,7 @@ csc.exe /nologo /target:winexe /platform:x64 /out:dist\HeatTray.exe /win32icon:s
 
 `csc.exe` is the one bundled with .NET Framework 4 (`C:\Windows\Microsoft.NET\Framework64\v4.0.30319`). Or just run `build.ps1`.
 
-SHA-256 of the committed `dist/HeatTray.exe` (v1.2): `7494D6F97CC653EA54685E9E9E7C10F12CC9B330088F22AF441AA2F0128DC1C8`
+SHA-256 of the committed `dist/HeatTray.exe` (v1.2): `A218A806D848441399C6593BDC19CDFAC7CF7BDB73C648FE63B6D9451B3DC93B`
 
 ## License
 

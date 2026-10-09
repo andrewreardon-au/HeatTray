@@ -166,10 +166,14 @@ user whose workload is a known, repeatable demo. Now:
   demo permanently amber - found in adversarial review). Valid only with >= 40% of the readings a full
   window holds at the current interval (so intervals > 5 s still work). Stored in `baseline.ini`
   (`version=3`, `ref=`, `date=`, `maxtemp=`, `samples=`); older formats are ignored.
-- Judged = loaded (>= gate) and a reference exists: speed% = min(100, smoothPerf / ref * 100).
-  Colour = speed only. Unjudged: grey raw % of rated, tag "Idle" or "Needs calibration".
-- **Icon = two lines** (speed % over GHz) drawn as `GraphicsPath` outlines scaled to fill a 32x32 bitmap
-  (`RenderIcon`/`DrawFit`); calibrating shows `CAL` over the countdown in cyan. The "Show GHz" toggle is gone.
+- Judged = loaded (>= gate) and a reference exists: speed% = smoothPerf / ref * 100 (NOT capped since the "one
+  number" change below). Colour = speed only. Idle with a reference: same figure, green if >= AmberPct else grey
+  (never orange/red). No reference: grey, GHz on the icon, tag "Idle" or "Needs calibration". (Superseded: the old
+  rule was a cap at 100 and a grey raw-% icon for everything unjudged.)
+- **Icon = one number by default** (see the "one number" section below): percent, GHz, or both (two lines, the old
+  layout), drawn as `GraphicsPath` outlines scaled to fill a 32x32 bitmap (`RenderIcon`/`DrawFit`); calibrating still
+  shows `CAL` over the countdown in cyan. (An older "Show GHz" toggle and its `icon=ghz` settings line are long gone;
+  the new setting uses the key `show` precisely so a stale `icon=` line cannot flip anyone's icon.)
 - `HotC`/`--hot` were removed in v1.2 (colour is speed only); old `hot=` lines in settings.ini are ignored. `WarnC` only drives advice and the "got hot during calibration" warning. Last calibration outcome is kept in Details (balloons can be
   suppressed by Focus Assist). Sleep/resume mid-calibration is not handled (wall-clock window).
 - After a hardware / power-mode / AC-vs-battery / demo-load change: calibrate again.
@@ -256,3 +260,44 @@ user whose workload is a known, repeatable demo. Now:
   expired peak, no sensor, OK speed); NoteTemp pruning and NaN handling; the real `Sample()` fills the ring; icon
   pixels show the top and bottom halves in the same colour for green/orange/red/grey/cyan. The new longest hint line
   ("Heat or power cap (peaked 83C)") is 225 px at 125%, narrower than the existing widest line (239 px).
+- **Fable adversarial review of that commit (81a5ae6): SHIP**, no material defects (it re-ran the differential sweep
+  and its own 343-state sweep). One low finding, fixed afterwards: `NoteTemp` pruned only readings older than 120 s,
+  so after a backward clock step (manual change / time-sync) future-stamped readings were never dropped; now
+  `Math.Abs(now - key) > HeatMemorySec`. Left alone on purpose (cosmetic, its call): integer-Kelvin readings are
+  X.85 C so "85C" is really 84.85 C ("Heat or power cap (peaked 85C)" while the README says 85+ = Check cooling);
+  Details can say "not exposed by this machine" for one tick if the sensor returns NaN while history exists;
+  `HeatTempC()` is re-evaluated per call (microsecond window at an entry's expiry).
+
+## 9 Oct (night): one number, uncapped, idle stays green, Settings "Icon shows"
+
+- **Why** (user): "one number for better visibility" - measured: with two lines the digits are ~8 px tall at the
+  user's 125% scaling (20 px tray icon); one number gives 14-17 px (2.1x for two digits, 1.7x for "100"); their
+  own PingTray single number beside HeatTray's pair showed it. Red on the maroon taskbar (76,4,32) is the weakest
+  colour (3.9:1 vs 7-11:1 for green/orange/grey), so size matters most for the state that matters most.
+- **Idle stays green** (user: "that way it stays green when idle instead of flapping to another state", then
+  "or maybe don't cap it - just make >100 green"). So: NO cap (idle readings on this machine are 105-121% of the
+  reference and show as such), and an idle reading is drawn with the same percentage; `IconTone(judged, haveRef,
+  vsRef)`: loaded -> Bad/Warn/Good by RedPct/AmberPct; idle with a reference -> Good if >= AmberPct else grey (a
+  CPU slows itself down on purpose when idle, so orange/red there would be false alarms on machines that idle low;
+  forcing "100" at idle was considered and rejected because the tooltip would then contradict the GHz); no
+  reference -> grey. `_speedPct` keeps meaning "judged (loaded + reference)" (-1 otherwise): the hint, reckoner,
+  trend and Details all key on that; Render computes `vsRef` itself for the idle case.
+- **No reference** (first run): there is no percentage to show, so the icon is the GHz alone in grey, in every mode
+  (this also removes the old "raw % of rated is a different scale" wart from the icon; the tooltip's "Speed N%"
+  still says % of rated in that state).
+- **Setting**: `IconShows` (`ShowPercent`=0 default, `ShowGhz`=1, `ShowBoth`=2), settings.ini key `show=percent|ghz|
+  both`, flag `--show=...` (flags win, never persisted, like the others), Settings dialog drop-down "Icon shows:"
+  (index = value; the other rows moved down 32 px, ClientSize 335x297), `--diag` prints it. Pure helpers (the test
+  seam): `IconLines(show, haveRef, pctText, ghzText, out top, out bottom)`, `IconTone`, `ParseShow` (-1 = junk),
+  `ShowName`. Both-mode is the old two-line layout with ONE colour for both lines.
+- User's `dist\settings.ini` still carries obsolete `hot=92` and `icon=ghz` lines (ignored; the next Settings OK
+  rewrites the file without them).
+- **Verification**: 62-check reflection script (helpers as tables; `Render()` icon pixels hashed against an
+  independently built expected `RenderIcon` for 11 states x 3 modes, plus tooltip number/tag; save/load round trip;
+  stale `icon=ghz`/`hot=` lines ignored; `show=BOTH`, `show=banana`; `--show=`, `--show both`, `--SHOW=GHz`,
+  nonsense; `--help`; Details text incl. "no verdict"/no "judged" jargon); differential sweep vs the previous build
+  (144 loaded states identical, 16 idle states differ only by the new first-line number); Settings dialog driven
+  end-to-end with Win32 messages on its own STA thread (CB_SETCURSEL / WM_SETTEXT / BM_CLICK; 14 checks: default
+  Percent, five number boxes in order, choose Both + OK writes `show=both`, reopen starts on Both, Cancel discards,
+  bad number warns and changes nothing, GHz and Percent save) plus a screenshot (PrintWindow) of the layout.
+  UI Automation could NOT see the WinForms controls from inside the same process (empty tree); Win32 messages work.

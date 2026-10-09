@@ -10,25 +10,32 @@ performance and when you can let it ride.
 
 WHAT THE ICON SHOWS
 
-The icon is two lines of text:
+One big number, so it can be read at a glance:
 
-     87      speed: % of your reference (see CALIBRATE below)
-     2.9     current speed of the working cores, in GHz
+     98      speed: % of your reference (see CALIBRATE below)
 
-The top number is your CPU's speed (while it is working) as a percentage
-of the reference you calibrated from your own demo workload. 100 = as fast
-as that workload normally runs; lower means something -- heat, a power
-limit, battery, or a power mode -- is holding it back. The COLOUR is about
-speed only, not temperature:
+What it says is your choice: right-click the icon, choose Settings..., and
+pick "Icon shows": Percent (the default), GHz (the current speed of the
+working cores, e.g. 3.2) or Both (percent over GHz on two lines, with
+smaller digits). The hover text always has both.
 
-  Green         At or near the reference speed (85% and up)
-  Orange        Noticeably slowed (under 85%)
-  Red           Heavily slowed (under 70%)
-  Grey          Nothing to compare with, so no green/orange/red. Either the
-                CPU is idle (load under 30% - it slows itself down when
-                idle, which is normal) or you have not calibrated yet. The
-                top number is then the raw speed as a percentage of the
-                CPU's rated speed, not of your reference.
+The number is your CPU's speed (while it is working) as a percentage of
+the reference you calibrated from your own demo workload. 100 = as fast as
+that workload normally runs, and above 100 = faster than it ran during
+calibration; lower means something -- heat, a power limit, battery, or a
+power mode -- is holding it back. The COLOUR is about speed only, not
+temperature:
+
+  Green         At or near the reference speed, or better (85% and up).
+                Also shown while the CPU is idle, so the icon does not
+                change colour every time the load dips.
+  Orange        Noticeably slowed (under 85%) while the CPU is working
+  Red           Heavily slowed (under 70%) while the CPU is working
+  Grey          No verdict. Either you have not calibrated yet (there is
+                nothing to take a percentage of, so the icon shows the
+                speed in GHz), or the CPU is idle and its speed is under
+                85% of your reference. An idle CPU slows itself down on
+                purpose, so an idle reading is never orange or red.
   Cyan CAL      Calibration in progress (with a countdown underneath)
   Grey ?        CPU counters not available (see TROUBLESHOOTING)
 
@@ -61,13 +68,14 @@ The hints are:
                      firmware power cap.
   Heat or power cap  Slow and warm (80-85 C, now or within the last 2
                      minutes): could be either.
-  Idle / Needs calibration   The icon is grey: no comparison is being
-                             made (see Grey above).
+  Idle / Needs calibration   No verdict is being made: idle (the icon stays
+                             green, or goes grey if the speed is low) or
+                             not calibrated yet (grey GHz). See Grey above.
 
 Click the icon for a full breakdown (temperature and its 2-minute peak,
 slowdown, trend, advice, and your reference).
 
-  90-100   Little or no slowdown   -> ignore the temperature, let it ride
+  90+      Little or no slowdown   -> ignore the temperature, let it ride
   70-90    Mild to moderate        -> fine for bursts; improve airflow if
                                       it stays here AND it is hot
   under 70 Heavy                   -> sort out cooling or power mode now
@@ -101,7 +109,7 @@ a benchmark.
   under 0.014                an abacus from 2400 BC
 
 The "orange below" threshold in Settings also decides when the line
-appears. It is not shown while the icon is grey (idle or not calibrated).
+appears. It is not shown while the CPU is idle or not calibrated.
 
 
 CALIBRATE TO YOUR DEMO LOAD (DO THIS ONCE)
@@ -158,10 +166,10 @@ STARTING AUTOMATICALLY ON LOGIN
 
 SETTINGS
 
-Right-click the icon and choose Settings... to change how often it
-samples, the "hot" temperature, the idle threshold and the speed
-thresholds. Changes apply immediately and are remembered (settings.ini
-next to the exe).
+Right-click the icon and choose Settings... to change what the icon shows
+(percent, GHz or both), how often it samples, the "hot" temperature, the
+idle threshold and the speed thresholds. Changes apply immediately and are
+remembered (settings.ini next to the exe).
 
 
 COMMAND-LINE OPTIONS
@@ -172,6 +180,7 @@ COMMAND-LINE OPTIONS
   --gate=<pct>                CPU load below which it counts as idle (30)
   --amber=<pct>               orange below this speed % (default 85)
   --red=<pct>                 red below this speed % (default 70)
+  --show=<percent|ghz|both>   what the icon shows (default percent)
   --diag                      show which counters work + live samples
   -h, --help                  show help and exit
   -v, --version               show version info and exit
@@ -185,7 +194,8 @@ TROUBLESHOOTING
 Open a terminal in the dist folder and run:   HeatTray.exe --diag
 
 That lists which Windows counters are available on this computer, the
-taskbar theme it detected (light or dark), and prints five live readings.
+taskbar theme it detected (light or dark), what the icon is set to show,
+and prints five live readings.
 Send that output along if something looks off.
 
   * Grey "?"        The CPU counters could not be opened. HeatTray needs an
@@ -222,9 +232,12 @@ not just the current one, and say so ("Check cooling (peaked 96C)"). A
 clamp that outlasts those 2 minutes can still read as "Check power mode";
 if it was hot a few minutes ago, treat it as cooling.
 
-Grey readings (idle or not calibrated) show the raw percentage of the
-CPU's rated speed, which is a different scale from the coloured readings
-(a percentage of your reference).
+Until you calibrate there is no percentage to show, so the icon shows the
+speed in GHz (grey), and the percentage in the hover text is then a
+percentage of the CPU's RATED speed, a different scale from the coloured
+readings (a percentage of your reference). While idle the icon shows the
+same percentage as under load, but it is never orange or red, because an
+idle CPU slows itself down on purpose.
 
 The light/dark choice follows the Windows system theme setting. With an
 unusual taskbar colour (a very light accent colour, high contrast) the icon
