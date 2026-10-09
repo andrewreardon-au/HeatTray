@@ -153,6 +153,11 @@ No `?.`, no `$""` interpolation, no expression-bodied members, no
   `releases/latest`. The version string is still 1.2: a release means bumping `Version`
   and `VersionDate` in the source, rebuilding, updating the README headers and hash, and
   tagging the new version.
+- **Release v1.2.1** (tag `v1.2.1`, Latest): a docs-only patch - the exe is the same file as
+  v1.2 (identical SHA-256, still says 1.2 in About) and the zip, rebuilt from the new tag,
+  carries the README screenshots. A three-part `Version` such as "1.2.1" cannot be used in
+  the source: the assembly attributes append `.0.0` (giving the invalid `1.2.1.0.0`), so a
+  docs-only patch re-uses the exe, and a real exe change needs a two-part bump (1.3).
 
 - Public repo: https://github.com/andrewreardon-au/HeatTray, branch `main`
   (renamed from `master`), created with `gh repo create ... --public --source .
