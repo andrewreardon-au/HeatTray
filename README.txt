@@ -27,8 +27,9 @@ power mode -- is holding it back. The COLOUR is about speed only, not
 temperature:
 
   Green         At or near the reference speed, or better (85% and up).
-                Also shown while the CPU is idle, so the icon does not
-                change colour every time the load dips.
+                Also shown while the CPU is idle and at least that fast,
+                so the icon does not change colour every time the load
+                dips.
   Orange        Noticeably slowed (under 85%) while the CPU is working
   Red           Heavily slowed (under 70%) while the CPU is working
   Grey          No verdict. Either you have not calibrated yet (there is
@@ -133,9 +134,10 @@ Notes:
   * If you forgot to start the workload it fails with a message instead of
     storing a bad reference.
   * Calibrate again after changing hardware, power mode, AC vs battery, or
-    what the demo workload does. Until you calibrate the icon is grey and
-    the tooltip says "Needs calibration". To forget the reference, delete
-    baseline.ini next to the exe.
+    what the demo workload does. Until you calibrate the icon is grey
+    (showing the speed in GHz) and, while the CPU is working, the tooltip
+    says "Needs calibration". To forget the reference, delete baseline.ini
+    next to the exe.
   * The reference is stored in baseline.ini next to the exe. It belongs to
     one computer: do not copy it to another.
 

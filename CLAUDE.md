@@ -324,3 +324,14 @@ user whose workload is a known, repeatable demo. Now:
   laptop" meant "compares your machine with a vintage one": it now reads "a tongue-in-cheek comparison of how your
   laptop is running right now with an old computer (your normal speed counts as a current laptop)"; README.md and
   README.txt use the same wording.
+- **Fable adversarial review of e369865 (one number / Settings / uncapped): SHIP**, no material findings (it rebuilt
+  HEAD, hammered the 999 clamp with a tiny reference, `--show` edge cases, stale settings.ini, the dialog driver, the
+  tooltip budget: longest 4-line tooltip 97-99 chars, widest line well under the 242 px max). Cosmetic notes: (1)
+  for the first ~4 samples after launch (smoothing ring not full) with the demo load already running the tooltip says
+  "Idle" and Details "Idle (load below 30%)" under "CPU load: 100%" - pre-existing, a "Starting" tag would fix it,
+  NOT done; (2) colour uses the unrounded value while the digits are rounded (84.6 shows "85" in orange) -
+  pre-existing, left; (3) wording: the Details Icon row said "Grey GHz = no reference yet" (untrue in GHz mode: grey
+  also means idle and under 85%), the README green row did not say idle needs >= 85%, and README said the tooltip
+  says "Needs calibration" even when idle - FIXED; (4) the 60% squeeze = this section's first bullet. It also saw
+  `dist\settings.ini` being rewritten by the running exe during its review (`show=ghz`): the user was trying the
+  Settings dialog on the live tray - leave their choice alone.

@@ -1112,7 +1112,7 @@ internal static class HeatTray
         Row(sb, string.Format("Slow, >= {0:0} C:", WarnC), "act on cooling or reduce the workload.");
         Row(sb, string.Format("Slow, < {0:0} C:", WarnC - 5), "not heat - check the power mode / AC power.");
         Row(sb, "Hints use:", "the hottest temperature of the last 2 minutes, not just now: a heat slowdown can outlast the heat.");
-        Row(sb, "Icon:", "your speed as a % of your normal (100 = as fast as your calibration run, more = faster), or GHz, or both: choose in Settings. Grey GHz = no reference yet.");
+        Row(sb, "Icon:", "your speed as a % of your normal (100 = as fast as your calibration run, more = faster), or GHz, or both: choose in Settings. Grey = no verdict: not calibrated yet (it then shows GHz), or idle with a low speed.");
         Row(sb, "Trend:", "the arrow in the tooltip and the Trend line above.");
         Row(sb, "Feels like:", "a tongue-in-cheek comparison of how your laptop is running right now with an old computer (your normal speed counts as a current laptop). Order of magnitude only - not a benchmark.");
         sb.AppendLine();

@@ -19,7 +19,7 @@ What it says is your choice: **Settings → Icon shows** has **Percent** (the de
 
 | Icon | Meaning |
 |---|---|
-| 🟢 Green | At or near the reference speed, or better (85%+ by default). Also shown while the CPU is idle, so the icon doesn't change colour every time the load dips |
+| 🟢 Green | At or near the reference speed, or better (85%+ by default). Also shown while the CPU is idle and at least that fast, so the icon doesn't change colour every time the load dips |
 | 🟠 Orange | Noticeably slowed (under 85%) while the CPU is working |
 | 🔴 Red | Heavily slowed (under 70%) while the CPU is working |
 | ⚪ Grey | No verdict. Either you haven't calibrated yet (there is nothing to take a percentage of, so the icon shows the speed in GHz), or the CPU is idle and its speed is under 85% of your reference. An idle CPU slows itself down on purpose, so an idle reading is never orange or red |
@@ -96,7 +96,7 @@ Details worth knowing:
 - The reference is the **median speed over the last 2 minutes** of the 5, i.e. the speed your load *settles* at. A cool CPU boosts harder for the first minutes; comparing against that would leave a healthy steady demo permanently orange. The notification also shows the first-minute average so you can see how big that boost was.
 - If it reached 85 °C+ during calibration the notification warns that the reference may be low - let it cool and run it again.
 - It needs enough loaded readings (about 40% of what a full window holds); if you forgot to start the load it fails with a message rather than storing a bad reference.
-- Calibrate again after changing hardware, power mode, AC vs battery, or what the demo load does. Until you calibrate, the icon is grey and the tooltip says "Needs calibration". To forget the reference, delete `baseline.ini` next to the exe.
+- Calibrate again after changing hardware, power mode, AC vs battery, or what the demo load does. Until you calibrate, the icon is grey (showing the speed in GHz) and, while the CPU is working, the tooltip says "Needs calibration". To forget the reference, delete `baseline.ini` next to the exe.
 - The reference is stored in `baseline.ini` next to the exe. It is specific to one computer - don't copy it to another.
 
 ## How it works (and why it's dependency-free)
@@ -168,7 +168,7 @@ csc.exe /nologo /target:winexe /platform:x64 /out:dist\HeatTray.exe /win32icon:s
 
 `csc.exe` is the one bundled with .NET Framework 4 (`C:\Windows\Microsoft.NET\Framework64\v4.0.30319`). Or just run `build.ps1`.
 
-SHA-256 of the committed `dist/HeatTray.exe` (v1.2): `B8C184E4990E5479D6FDF4EAED16CB24F5C47B7031D43CCDA2E2934FDB868C9C`
+SHA-256 of the committed `dist/HeatTray.exe` (v1.2): `8776163EE3C1739D637EF9C8F5A5AA1E915263ADEDC2BC903097046148C399FF`
 
 ## License
 
