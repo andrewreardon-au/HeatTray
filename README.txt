@@ -86,11 +86,10 @@ A brief dip is normal. What matters is when it STAYS low.
 THE READY RECKONER
 
 When the icon is orange or red, the tooltip gets a "Like a ..." line (and
-Details gets a "Feels like" row) saying roughly which vintage of CPU your
-laptop is performing like right now, counting your normal speed as a
-current laptop, and the year that CPU debuted. It is tongue-in-cheek and
-single-thread only: an order-of-magnitude feel for "how bad is this", not
-a benchmark.
+Details gets a "Feels like" row): a tongue-in-cheek comparison of how your
+laptop is running right now with an old computer (your normal speed counts
+as a current laptop), and the year that CPU debuted. It is single-thread
+only: an order-of-magnitude feel for "how bad is this", not a benchmark.
 
   Speed (% of your normal)   Feels like
   85 and up                  as intended (no line shown)

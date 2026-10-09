@@ -1114,7 +1114,7 @@ internal static class HeatTray
         Row(sb, "Hints use:", "the hottest temperature of the last 2 minutes, not just now: a heat slowdown can outlast the heat.");
         Row(sb, "Icon:", "your speed as a % of your normal (100 = as fast as your calibration run, more = faster), or GHz, or both: choose in Settings. Grey GHz = no reference yet.");
         Row(sb, "Trend:", "the arrow in the tooltip and the Trend line above.");
-        Row(sb, "Feels like:", "a tongue-in-cheek comparison that treats your normal speed as a current laptop. Order of magnitude only - not a benchmark.");
+        Row(sb, "Feels like:", "a tongue-in-cheek comparison of how your laptop is running right now with an old computer (your normal speed counts as a current laptop). Order of magnitude only - not a benchmark.");
         sb.AppendLine();
         Para(sb, "The reference is the median busy-core speed over the last 2 minutes of a 5-minute calibration run (the settled speed, not the initial boost). Calibrate again after changing the hardware, power mode or what your demo load does.");
         return sb.ToString().Replace("\r\n", "\n").Replace("\n", "\r\n");
@@ -1389,19 +1389,51 @@ internal static class HeatTray
         }
     }
 
+    // Digits are never stretched taller than 1 / MinSqueeze of their natural shape (60% looked
+    // elongated); InkGap is the space between characters, in the 100-unit em they are laid out in.
+    private const float MinSqueeze = 0.85f;
+    private const float InkGap = 9f;
+
+    // The text as one outline path. Each character is placed by its ink, not by its advance
+    // width, so a narrow "1" takes little room and "119" needs far less squeezing to fit.
+    private static System.Drawing.Drawing2D.GraphicsPath TightText(string text)
+    {
+        var path = new System.Drawing.Drawing2D.GraphicsPath();
+        using (var family = new FontFamily("Segoe UI"))
+        {
+            float x = 0;
+            foreach (char ch in text)
+            {
+                using (var glyph = new System.Drawing.Drawing2D.GraphicsPath())
+                {
+                    glyph.AddString(ch.ToString(), family, (int)FontStyle.Bold, 100f, new PointF(0, 0), StringFormat.GenericTypographic);
+                    RectangleF cb = glyph.GetBounds();
+                    if (cb.Width <= 0) continue;
+                    using (var m = new System.Drawing.Drawing2D.Matrix())
+                    {
+                        m.Translate(x - cb.X, 0);
+                        glyph.Transform(m);
+                    }
+                    path.AddPath(glyph, false);
+                    x += cb.Width + InkGap;
+                }
+            }
+        }
+        return path;
+    }
+
     // Draws text as an outline path scaled to fill the box (digits as tall as
     // the box allows), with a thin halo so it reads on any taskbar.
     private static void DrawFit(Graphics g, string text, Color color, Color halo, RectangleF box)
     {
-        using (var path = new System.Drawing.Drawing2D.GraphicsPath())
+        using (var path = TightText(text))
         {
-            path.AddString(text, new FontFamily("Segoe UI"), (int)FontStyle.Bold, 100f, new PointF(0, 0), StringFormat.GenericTypographic);
             RectangleF b = path.GetBounds();
             if (b.Width <= 0 || b.Height <= 0) return;
-            // Fill the box height; squeeze horizontally (to at most 60%) only when the
-            // text is too wide, rather than shrinking it, so "100" stays as tall as "92".
+            // Fill the box height; if the text is too wide, squeeze it horizontally (never
+            // below MinSqueeze) and only then shrink it.
             float fitW = box.Width / b.Width, fitH = box.Height / b.Height;
-            float sy = Math.Min(fitH, fitW / 0.6f);
+            float sy = Math.Min(fitH, fitW / MinSqueeze);
             float sx = Math.Min(sy, fitW);
             using (var m = new System.Drawing.Drawing2D.Matrix())
             {

@@ -61,7 +61,7 @@ A brief dip is normal. What matters is when it **stays** low.
 
 ### The ready reckoner
 
-When the icon is orange or red, the tooltip gets a fourth line and Details gets a "Feels like" row saying roughly which vintage of CPU your laptop is performing like right now, counting your normal speed as a current laptop. It is tongue-in-cheek and single-thread only: an order-of-magnitude feel for *how bad is this*, not a benchmark.
+When the icon is orange or red, the tooltip gets a fourth line and Details gets a "Feels like" row: a tongue-in-cheek comparison of how your laptop is running right now with an old computer (your normal speed counts as a current laptop). It is single-thread only: an order-of-magnitude feel for *how bad is this*, not a benchmark.
 
 | Speed (% of your normal, approx.) | Feels like (and the year that CPU debuted) |
 |---|---|
@@ -168,7 +168,7 @@ csc.exe /nologo /target:winexe /platform:x64 /out:dist\HeatTray.exe /win32icon:s
 
 `csc.exe` is the one bundled with .NET Framework 4 (`C:\Windows\Microsoft.NET\Framework64\v4.0.30319`). Or just run `build.ps1`.
 
-SHA-256 of the committed `dist/HeatTray.exe` (v1.2): `A218A806D848441399C6593BDC19CDFAC7CF7BDB73C648FE63B6D9451B3DC93B`
+SHA-256 of the committed `dist/HeatTray.exe` (v1.2): `B8C184E4990E5479D6FDF4EAED16CB24F5C47B7031D43CCDA2E2934FDB868C9C`
 
 ## License
 

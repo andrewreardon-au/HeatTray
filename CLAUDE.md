@@ -180,10 +180,16 @@ user whose workload is a known, repeatable demo. Now:
 - Details popup: `Row()`/`Para()` helpers wrap to `DetailsWidth` (82 chars) with a hanging indent; the box is 636 px wide.
   The trend ring only takes samples whose whole smoothing window is loaded (ramp-up from idle averaged in idle
   readings and showed a fake "+479% rising").
-- Icon text fill: each of the two lines gets 14.5 of the 32 px (0.75 px margins); `DrawFit` fills the box
-  HEIGHT and squeezes horizontally (never below 60%) only when the text is too wide, so "100" is as tall as
-  "92". Verified over 130 strings that no glyph touches the canvas edge. The 16-24 px tray is the real limit:
-  two lines cannot exceed ~7 px cap height at 100% scaling.
+- Icon text fill: a single line gets a 30x28 px box of the 32 px canvas, each of two lines 14.5 px (0.75 px
+  margins). `DrawFit` fills the box HEIGHT and, only if the text is too wide, squeezes it horizontally - never
+  below `MinSqueeze` (0.85; it was 0.6 and 3-digit numbers like 119 looked elongated) - and then shrinks it, so
+  "100" is shorter than "92". `TightText` places each character by its INK width plus `InkGap` (9 units of a
+  100-unit em) instead of its advance width: Segoe UI digits are tabular, so a narrow "1" left big gaps and
+  forced the squeeze. Verified over 136 strings per palette that no glyph touches the canvas edge and that the
+  two lines of the two-line icon stay apart. The 16-24 px tray is the real limit: two lines cannot exceed ~7 px
+  cap height at 100% scaling. Alternatives rendered and rejected (comparison sheets elongated.png / elongated2.png / elong-ab.png in the session scratchpad): a native
+  condensed font (Bahnschrift Condensed: tall and natural, but the "4" turns into "4:" at this size and it adds
+  a font dependency), "Segoe UI Black" (blobby), faux-bold stems.
 - "Clear reference..." menu item removed (recalibrating overwrites; delete baseline.ini to forget it).
 - **Theme-aware icon colours.** `ApplyIcon` takes a `Tone` (Neutral/Good/Warn/Bad/Cal), not a `Color`;
   `ToneColor(tone, light)` maps it to a bright colour for a dark taskbar (Gainsboro/LimeGreen/Orange/Red/Cyan,
@@ -292,7 +298,7 @@ user whose workload is a known, repeatable demo. Now:
   `ShowName`. Both-mode is the old two-line layout with ONE colour for both lines.
 - User's `dist\settings.ini` still carries obsolete `hot=92` and `icon=ghz` lines (ignored; the next Settings OK
   rewrites the file without them).
-- **Verification**: 62-check reflection script (helpers as tables; `Render()` icon pixels hashed against an
+- **Verification**: 55-check reflection script (earlier written as "62" by mistake - it is 55) (helpers as tables; `Render()` icon pixels hashed against an
   independently built expected `RenderIcon` for 11 states x 3 modes, plus tooltip number/tag; save/load round trip;
   stale `icon=ghz`/`hot=` lines ignored; `show=BOTH`, `show=banana`; `--show=`, `--show both`, `--SHOW=GHz`,
   nonsense; `--help`; Details text incl. "no verdict"/no "judged" jargon); differential sweep vs the previous build
@@ -301,3 +307,20 @@ user whose workload is a known, repeatable demo. Now:
   Percent, five number boxes in order, choose Both + OK writes `show=both`, reopen starts on Both, Cancel discards,
   bad number warns and changes nothing, GHz and Percent save) plus a screenshot (PrintWindow) of the layout.
   UI Automation could NOT see the WinForms controls from inside the same process (empty tree); Win32 messages work.
+
+## 9 Oct (night, later): less elongated digits; "Feels like" wording
+
+- User: "it's good but it look kind of elongated". Cause: to make the number as tall as possible `DrawFit` stretched
+  the text vertically, squeezing it to 60% of its natural width (3-digit numbers: "119", "100") or ~74% (2-digit),
+  and Segoe UI's tabular digits left big gaps around a narrow "1", which forced the squeeze. Fix: `TightText`
+  (ink-based spacing, `InkGap` 9) and `MinSqueeze` 0.85. Effect at the user's 20 px tray: "119" 14.4 px tall at 60%
+  -> 13.0 px at 85% and visibly a normal numeral; 2-digit numbers 17.5 px -> ~15.5 px; the old two-line icon was
+  8 px. Candidates compared at real size on the user's taskbar colour (sheets elongated.png, elongated2.png,
+  elong-ab.png, elong-sizes.png): 0.75 squeeze (a middle option, "119" 14.7 px), 1.0 (natural but "119" only 8.7-11
+  px), native condensed font Bahnschrift (nice proportions, but the "4" degrades to "4:" and it adds a font
+  dependency), Segoe UI Black / faux-bold stems (blobby). `MinSqueeze` is a one-line knob: 0.75 = taller, 1.0 = natural.
+  Checked 136 strings per palette for edge clipping, that the two lines of the two-line icon stay apart, 16/20/24 px.
+- Details "Feels like" explanation reworded after the user asked whether "treats your normal speed as a current
+  laptop" meant "compares your machine with a vintage one": it now reads "a tongue-in-cheek comparison of how your
+  laptop is running right now with an old computer (your normal speed counts as a current laptop)"; README.md and
+  README.txt use the same wording.
