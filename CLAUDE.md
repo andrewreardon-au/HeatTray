@@ -45,6 +45,17 @@ Findings that shaped the design:
 - `README.md` / `README.txt` — end-user docs. README.md records the csc
   command and a SHA-256 placeholder — **fill in the hash
   (`Get-FileHash dist\HeatTray.exe`) whenever a release build is committed**.
+- `screenshots/` — the four images in README.md (tray + hover tooltip, Details,
+  Settings, right-click menu). **The tray and Details shots show a STAGED slowed
+  state**, not a real slowdown: a temporary `baseline.ini` with `ref=145` and the
+  flag `--gate=5` make an idle laptop read ~75% (orange) with believable numbers
+  (3.6 GHz now against a 4.8 GHz "normal"); the user's real baseline.ini was
+  backed up and restored (hash-checked). Settings and menu were taken from the
+  untouched live instance. If you retake them, keep Settings at the default
+  values (a `--gate=5` run would show 5 in the dialog) and keep the staged
+  numbers coherent. Window shots are `PrintWindow` captures (native size, so
+  crisp); the tooltip and menu shots are `CopyFromScreen` after real injected
+  mouse input - see process.md.
 - `settings.ini`, `baseline.ini` — runtime files written next to the exe;
   git-ignored.
 

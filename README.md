@@ -5,6 +5,10 @@
 
 Shows, in the system tray, whether your CPU is actually running slower than it can - so you know when heat is genuinely costing you performance and when you can just let it ride.
 
+![HeatTray in the system tray showing 75% in orange, with the hover tooltip](screenshots/HeatTray-screenshot_tray.png)
+
+*An example of a slowed reading: the icon is orange and the tooltip says what it feels like.*
+
 ## What the icon shows
 
 One big number, so it can be read at a glance:
@@ -48,6 +52,8 @@ Line by line: speed, GHz and a trend arrow (▲ rising, ► steady, ▼ falling 
 | Idle / Needs calibration | No verdict is being made: idle (the icon stays green, or goes grey if the speed is low) or not calibrated yet (grey GHz). See Grey above |
 
 Click the icon (or right-click → **Details...**) for the full breakdown: the temperature and its 2-minute peak, estimated slowdown, the ready-reckoner feel, trend with GHz, the advice in a sentence, your reference and when it was set.
+
+![The Details window](screenshots/HeatTray-screenshot_details.png)
 
 ### Rules of thumb
 
@@ -118,6 +124,7 @@ Readings are smoothed over the last 5 samples. Above the idle threshold (30% loa
 | `dist/HeatTray.exe` | Prebuilt, ready-to-run binary |
 | `build.ps1` | Rebuilds `dist/HeatTray.exe` from source on your own machine |
 | `make-icon.ps1` | Regenerates `src/HeatTray.ico` (only needed if you change the artwork) |
+| `screenshots/` | The images in this README |
 
 No installer needed: [download the latest release zip](https://github.com/andrewreardon-au/HeatTray/releases/latest), extract, and run `dist\HeatTray.exe`.
 
@@ -127,6 +134,8 @@ No installer needed: [download the latest release zip](https://github.com/andrew
 2. Don't see it? Click the small **^** arrow near the clock to show hidden tray icons.
 3. Calibrate (above).
 4. To close it, right-click the icon → **Exit**.
+
+![The right-click menu](screenshots/HeatTray-screenshot_menu.png)
 
 To pin it visibly: right-click the taskbar → **Taskbar settings** → **Other system tray icons** → toggle **HeatTray** on.
 
@@ -139,6 +148,8 @@ To pin it visibly: right-click the taskbar → **Taskbar settings** → **Other 
 ## Settings and command line
 
 Right-click the icon → **Settings...** (left-click opens **Details**) to change what the icon shows (percent, GHz or both), the sample interval, the idle threshold, the speed thresholds and the temperature that counts as "hot". Changes apply immediately and are saved to `settings.ini` next to the exe.
+
+![The Settings box](screenshots/HeatTray-screenshot_settings.png)
 
 ```
 HeatTray.exe [-i <sec>] [--warn=<C>] [--gate=<pct>]
