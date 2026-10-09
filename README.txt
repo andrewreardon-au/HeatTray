@@ -39,8 +39,8 @@ icon follows within a couple of seconds.
 Hover over the icon for the details, for example:
 
   Speed 18% 0.6GHz v
-  77C | load 55%
-  Check power mode
+  74C | load 55%
+  Check cooling (peaked 96C)
   Like a Pentium 4 2.4GHz from 2002
 
 That is, line by line: speed, GHz and a trend arrow (up, steady or down
@@ -52,16 +52,20 @@ The hints are:
 
   OK                 Normal speed. Even if hot, you are not being slowed.
   Check cooling      Slow AND hot (85 C+): airflow, dust, surface, or
-                     reduce the load.
-  Check power mode   Slow but NOT hot (under 80 C): not heat. Check the
+                     reduce the load. "(peaked 96C)" means it is no
+                     longer that hot but was within the last 2 minutes:
+                     a heat slowdown can outlast the heat.
+  Check power mode   Slow but NOT hot (under 80 C, and not that hot at any
+                     point in the last 2 minutes): not heat. Check the
                      Windows power mode, AC power / charger, or a
                      firmware power cap.
-  Heat or power cap  Slow and warm (80-85 C): could be either.
+  Heat or power cap  Slow and warm (80-85 C, now or within the last 2
+                     minutes): could be either.
   Idle / Needs calibration   The icon is grey: no comparison is being
                              made (see Grey above).
 
-Click the icon for a full breakdown (slowdown, trend, advice, and your
-reference).
+Click the icon for a full breakdown (temperature and its 2-minute peak,
+slowdown, trend, advice, and your reference).
 
   90-100   Little or no slowdown   -> ignore the temperature, let it ride
   70-90    Mild to moderate        -> fine for bursts; improve airflow if
@@ -213,8 +217,10 @@ A heat slowdown can outlast the heat. After a firmware thermal clamp the
 CPU can stay pinned at its lowest speed for 30-40 seconds while the
 temperature falls back below 80 C (seen on a laptop resting on a pillow:
 96 C, then about 0.5 GHz for 36+ seconds until it had cooled to about
-73 C). In that window the hint can say "Check power mode" even though heat
-caused it. If it was hot a minute ago, treat it as cooling.
+73 C). So the hints go by the hottest temperature of the last 2 minutes,
+not just the current one, and say so ("Check cooling (peaked 96C)"). A
+clamp that outlasts those 2 minutes can still read as "Check power mode";
+if it was hot a few minutes ago, treat it as cooling.
 
 Grey readings (idle or not calibrated) show the raw percentage of the
 CPU's rated speed, which is a different scale from the coloured readings

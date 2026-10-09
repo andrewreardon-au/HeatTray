@@ -31,8 +31,8 @@ The text colours follow the Windows taskbar theme: bright shades on a dark taskb
 
 ```
 Speed 18% 0.6GHz ▼
-77C | load 55%
-Check power mode
+74C | load 55%
+Check cooling (peaked 96C)
 Like a Pentium 4 2.4GHz from 2002
 ```
 
@@ -41,12 +41,12 @@ Line by line: speed, GHz and a trend arrow (▲ rising, ► steady, ▼ falling 
 | Hint | Meaning |
 |---|---|
 | OK | Running at normal speed. Even if it is hot, you are not being slowed - carry on |
-| Check cooling | Slow **and** hot (85 °C+) - airflow, dust, surface, or reduce the load |
-| Check power mode | Slow but **not** hot (under 80 °C) - not heat: check the Windows power mode, AC power / charger wattage, or a firmware power cap |
-| Heat or power cap | Slow and warm (80-85 °C) - could be either; watch whether it gets hotter |
+| Check cooling | Slow **and** hot (85 °C+) - airflow, dust, surface, or reduce the load. "(peaked 96C)" means it is no longer that hot but was within the last 2 minutes: a heat slowdown can outlast the heat |
+| Check power mode | Slow but **not** hot (under 80 °C, and not that hot at any point in the last 2 minutes) - not heat: check the Windows power mode, AC power / charger wattage, or a firmware power cap |
+| Heat or power cap | Slow and warm (80-85 °C, now or within the last 2 minutes) - could be either; watch whether it gets hotter |
 | Idle / Needs calibration | The icon is grey: no comparison is being made (see Grey above) |
 
-Click the icon (or right-click → **Details...**) for the full breakdown: estimated slowdown, the ready-reckoner feel, trend with GHz, the advice in a sentence, your reference and when it was set.
+Click the icon (or right-click → **Details...**) for the full breakdown: the temperature and its 2-minute peak, estimated slowdown, the ready-reckoner feel, trend with GHz, the advice in a sentence, your reference and when it was set.
 
 ### Rules of thumb
 
@@ -148,7 +148,7 @@ HeatTray.exe [-i <sec>] [--warn=<C>] [--gate=<pct>]
 
 - It measures the **outcome** (slower clocks) and a coarse ACPI temperature, not the chip's internal power/thermal limits. It can't tell you *why* the CPU is slow - the hint is a rule of thumb from speed vs temperature. Firmware power caps (sustained TDP limits), **battery operation and Windows power modes (e.g. "Best power efficiency") all look identical to heat** from here.
 - The reference is only as good as the calibration: a different power mode, AC vs battery, or a demo load that changes shape will make the number read wrongly until you calibrate again. Calibrating while it heats up and throttles gives a low reference (you get a warning if it reached 85 °C).
-- **A heat slowdown can outlast the heat.** After a firmware thermal clamp the CPU can stay pinned at its lowest speed for 30-40 seconds while the temperature falls back below 80 °C (seen on a laptop resting on a pillow: 96 °C, then ~0.5 GHz for 36+ seconds until it had cooled to ~73 °C). In that window the hint can say "Check power mode" even though heat caused it. If it was hot a minute ago, treat it as cooling.
+- **A heat slowdown can outlast the heat.** After a firmware thermal clamp the CPU can stay pinned at its lowest speed for 30-40 seconds while the temperature falls back below 80 °C (seen on a laptop resting on a pillow: 96 °C, then ~0.5 GHz for 36+ seconds until it had cooled to ~73 °C). So the hints go by the hottest temperature of the last 2 minutes, not just the current one, and say so (`Check cooling (peaked 96C)`). A clamp that outlasts those 2 minutes can still read as "Check power mode"; if it was hot a few minutes ago, treat it as cooling.
 - Grey readings (idle or not calibrated) show the raw % of the CPU's rated speed, which is a different scale from the coloured readings (% of your reference).
 - The light/dark choice follows the Windows system theme setting. With an unusual taskbar colour (a very light accent colour, high contrast) the icon text can be harder to read; the outline helps.
 - Some machines (desktops, some VMs) don't expose a thermal zone; speed still works, and the hints just can't use temperature. `Thermal Zone Information` also only has 1 K resolution and updates slowly.
@@ -166,7 +166,7 @@ csc.exe /nologo /target:winexe /platform:x64 /out:dist\HeatTray.exe /win32icon:s
 
 `csc.exe` is the one bundled with .NET Framework 4 (`C:\Windows\Microsoft.NET\Framework64\v4.0.30319`). Or just run `build.ps1`.
 
-SHA-256 of the committed `dist/HeatTray.exe` (v1.2): `B7155EC9A60508FF068B691DCB5F8FB750A41647064FF29E94A7525696D99ECE`
+SHA-256 of the committed `dist/HeatTray.exe` (v1.2): `7494D6F97CC653EA54685E9E9E7C10F12CC9B330088F22AF441AA2F0128DC1C8`
 
 ## License
 

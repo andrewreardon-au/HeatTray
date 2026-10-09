@@ -220,10 +220,11 @@ user whose workload is a known, repeatable demo. Now:
   pinned `% Processor Performance` at a flat 17% (~0.55 GHz) for 36+ s at 40-100% load while the temperature FELL
   from 77 to 73 C; speed returned only at ~73 C and temperature then jumped 73 -> 83 C in 3 s. Windows saw none of it
   (`% Performance Limit` 100, `Throttle Reasons` 0, no Kernel-Processor-Power event 37). **Consequence: `AdviceShort()`
-  (instant temperature) says "Check power mode" during the clamp, which is wrong (it is heat).** Proposed fix, NOT yet
-  done (awaiting the user's go-ahead): base the cooling-vs-power decision on the peak temperature of the last ~2 min.
-- Colour question raised by the user ("why is the percent red by the ghz grey"): the top line is coloured by the
-  speed verdict, the GHz line is always the neutral tone by design. Option offered: colour both lines the same.
+  (instant temperature) said "Check power mode" during the clamp, which was wrong (it is heat).** Fixed in the next
+  section (the hint now looks back 2 minutes).
+- Colour question raised by the user ("why is the percent red by the ghz grey"): the top line was coloured by the
+  speed verdict, the GHz line was always the neutral tone. The user then asked for the same colour on both lines: done
+  (next section).
 - **Verification tooling that now works** (screen capture was unavailable in earlier sessions): UIA read of the tray
   button name (`SystemTray.NormalButton`; this Windows 11 tray is XAML) and `CopyFromScreen` after
   `SetProcessDPIAware()` (without it a DPI-unaware PowerShell captures the wrong region on a scaled display).
@@ -236,3 +237,22 @@ user whose workload is a known, repeatable demo. Now:
   200% wraps before "from" (the no-break space makes that tidy). **Not yet seen visually:** the screen was locked
   (LogonUI) during the hover test, but UI Automation confirmed the shell received all four lines (96 chars) on the
   real pinned icon (forced via a temporary ref=400 baseline + --gate=5; the real baseline.ini was restored, hash-checked).
+
+## 9 Oct (later still): hint looks back 2 minutes; one colour on both icon lines
+
+- **Hint accuracy fix** (user: "fix the hint accuracy"). `Sample()` calls `NoteTemp(_lastTempC)`, which keeps the last
+  `HeatMemorySec` (120 s) of readings in `_tempRing` (`Queue<KeyValuePair<DateTime (UTC), double>>`; NaN is not stored;
+  pruned by age). `HeatTempC()` = the hotter of now and the ring; it filters by age itself, so it does not depend on
+  when the last prune ran. `HintFor(t)` is the old rule (NaN or < WarnC-5 -> power mode; >= WarnC -> cooling; else
+  heat or power cap) and `AdviceShort()` = null / "OK" / `HintFor(HeatTempC())`. `PeakNote()` returns " (peaked 96C)"
+  only when that hint differs from what the current temperature alone would give, so a calm "Check power mode" never
+  carries a suffix. Tooltip line 3 = `AdviceShort() + PeakNote()`. Details: the `Temperature:` row adds "(hottest in
+  the last 2 minutes: N C)" when that is >= 1 C above now; `Advice:` says "it was hot within the last 2 minutes
+  (peak NC)"; a "Hints use:" row sits under HOW TO READ IT. Why 120 s: the real clamp held the CPU for 36+ s; a
+  clamp that outlasts the window still reads "Check power mode" (stated in README Limits).
+- **Both icon lines share one colour** (`ApplyIcon(.., tone, tone)`; CAL and its countdown are both Cyan).
+- Verification: differential sweep (160 states, empty history) of the new build vs a build of HEAD = identical
+  output; scenario table with synthetic history (pillow clamp, never hot, warm earlier, hot now, both window edges,
+  expired peak, no sensor, OK speed); NoteTemp pruning and NaN handling; the real `Sample()` fills the ring; icon
+  pixels show the top and bottom halves in the same colour for green/orange/red/grey/cyan. The new longest hint line
+  ("Heat or power cap (peaked 83C)") is 225 px at 125%, narrower than the existing widest line (239 px).

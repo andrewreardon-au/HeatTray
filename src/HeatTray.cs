@@ -110,6 +110,12 @@ internal static class HeatTray
     private const int TrendEnds = 15;     // compare the newest vs oldest ~30 s of the window
     private const int TrendMin = 60;      // need ~2 min of loaded history before showing a trend
 
+    // Recent temperature readings (UTC time, deg C), so the hint can look back and not
+    // only at now: a firmware thermal clamp can hold the CPU slow for 30-40 s after
+    // the heat has gone (see HeatTempC).
+    private const int HeatMemorySec = 120;
+    private static readonly Queue<KeyValuePair<DateTime, double>> _tempRing = new Queue<KeyValuePair<DateTime, double>>();
+
     // The reference: busy-core speed (% of rated) of the user's own demo load,
     // measured once while the machine was cool (see StartCalibration).
     private static double _refPct;                // 0 = none yet
@@ -320,6 +326,7 @@ internal static class HeatTray
             return; // implausible reading (counter glitch); skip this tick
         }
         _lastTempC = ReadTempC();
+        NoteTemp(_lastTempC);
 
         _perfRing.Enqueue(_lastPerf);
         _utilRing.Enqueue(_lastUtil);
@@ -399,20 +406,58 @@ internal static class HeatTray
         return t >= 3 ? 1 : (t <= -3 ? -1 : 0);
     }
 
-    // Short cause hint from speed vs temperature; null when speed isn't judged.
+    // Keeps the last HeatMemorySec seconds of temperature readings.
+    private static void NoteTemp(double tempC)
+    {
+        DateTime now = DateTime.UtcNow;
+        if (!double.IsNaN(tempC)) _tempRing.Enqueue(new KeyValuePair<DateTime, double>(now, tempC));
+        while (_tempRing.Count > 0 && (now - _tempRing.Peek().Key).TotalSeconds > HeatMemorySec) _tempRing.Dequeue();
+    }
+
+    // The temperature the hints go by: the hottest reading of the last HeatMemorySec
+    // seconds, or now if that is hotter (NaN with no reading at all). Going by the
+    // instantaneous value blamed the power mode for a heat slowdown that outlasted the
+    // heat: after a firmware thermal clamp the CPU stayed pinned at its lowest speed
+    // for 30-40 s while the temperature fell from 96 C to 73 C.
+    private static double HeatTempC()
+    {
+        double peak = _lastTempC;
+        DateTime cutoff = DateTime.UtcNow.AddSeconds(-HeatMemorySec);
+        foreach (KeyValuePair<DateTime, double> kv in _tempRing)
+        {
+            if (kv.Key >= cutoff && (double.IsNaN(peak) || kv.Value > peak)) peak = kv.Value;
+        }
+        return peak;
+    }
+
+    // Cause hint for a slow reading when the temperature is t (NaN = unknown).
     // Slow + hot -> cooling; slow + cool -> power mode / AC / firmware cap.
+    private static string HintFor(double t)
+    {
+        if (double.IsNaN(t) || t < WarnC - 5) return "Check power mode";
+        return t >= WarnC ? "Check cooling" : "Heat or power cap";
+    }
+
+    // Short cause hint; null when speed isn't judged.
     private static string AdviceShort()
     {
         if (_speedPct < 0 || !_calibrated) return null;
-        bool hot = !double.IsNaN(_lastTempC) && _lastTempC >= WarnC;
         if (_speedPct >= AmberPct) return "OK";
-        if (hot) return "Check cooling";
-        if (double.IsNaN(_lastTempC) || _lastTempC < WarnC - 5) return "Check power mode";
-        return "Heat or power cap";
+        return HintFor(HeatTempC());
+    }
+
+    // " (peaked 96C)" when a slow reading is being put down to heat that has already
+    // eased, i.e. the hint differs from what the current temperature alone would give.
+    private static string PeakNote()
+    {
+        double peak = HeatTempC();
+        if (_speedPct < 0 || !_calibrated || _speedPct >= AmberPct || double.IsNaN(peak) || HintFor(peak) == HintFor(_lastTempC)) return "";
+        return string.Format(" (peaked {0:0}C)", peak);
     }
 
     private static string AdviceLong()
     {
+        bool eased = PeakNote().Length > 0;   // the hint rests on heat that has already eased
         switch (AdviceShort())
         {
             case "OK":
@@ -420,11 +465,15 @@ internal static class HeatTray
                     ? "Hot, but still holding normal speed - no action needed."
                     : "Running at normal speed - carry on.";
             case "Check cooling":
-                return "Slow AND hot - act on cooling (airflow, dust, surface) or reduce the workload.";
+                return eased
+                    ? string.Format("Slow, and it was hot within the last 2 minutes (peak {0:0}C): a heat slowdown can outlast the heat. Act on cooling (airflow, dust, surface) or reduce the workload.", HeatTempC())
+                    : "Slow AND hot - act on cooling (airflow, dust, surface) or reduce the workload.";
             case "Check power mode":
                 return "Slow but not hot - this isn't heat. Check the power mode, AC power / charger wattage, or a firmware power cap.";
             case "Heat or power cap":
-                return "Slow and warm - could be heat or a power limit. Watch whether it gets hotter; check power mode too.";
+                return eased
+                    ? string.Format("Slow, and it was warm within the last 2 minutes (peak {0:0}C) - could be heat or a power limit. Watch whether it gets hotter; check power mode too.", HeatTempC())
+                    : "Slow and warm - could be heat or a power limit. Watch whether it gets hotter; check power mode too.";
         }
         return null;
     }
@@ -476,7 +525,7 @@ internal static class HeatTray
             int left = Math.Max(0, CalSeconds - (int)(DateTime.Now - _calStart).TotalSeconds);
             string mmss = string.Format("{0}:{1:00}", left / 60, left % 60);
             SetTooltip(string.Format("Calibrating {0} left\n{1} | {2}\n{3} readings", mmss, tempText, loadText, _calSamples.Count));
-            ApplyIcon("CAL", mmss, Tone.Cal, Tone.Neutral);
+            ApplyIcon("CAL", mmss, Tone.Cal, Tone.Cal);
             return;
         }
 
@@ -492,7 +541,7 @@ internal static class HeatTray
         string arrow = "";
         if (judged)
         {
-            tag = AdviceShort();
+            tag = AdviceShort() + PeakNote();
             if (!double.IsNaN(TrendPct()))
             {
                 int td = TrendDir();
@@ -513,6 +562,7 @@ internal static class HeatTray
 
         // Judged: colour is about speed only (is heat actually slowing me down?);
         // temperature is in the tooltip. Not judged: grey (neutral), no verdict.
+        // Both lines share the colour so the icon reads as one signal.
         Tone tone = Tone.Neutral;
         if (judged)
         {
@@ -520,7 +570,7 @@ internal static class HeatTray
         }
         ApplyIcon(shown.ToString(CultureInfo.InvariantCulture),
             double.IsNaN(g) ? null : g.ToString("0.0", CultureInfo.InvariantCulture),
-            tone, Tone.Neutral);
+            tone, tone);
     }
 
     // ------------------------------------------------------------------
@@ -945,7 +995,10 @@ internal static class HeatTray
             Row(sb, "CPU load:", string.Format("{0:0}%", _lastUtil));
             Row(sb, "Busy-core speed:", string.Format("{0:0}% of rated{1}", _lastPerf,
                 double.IsNaN(ghz) ? "" : string.Format(" (~{0:0.0} GHz)", ghz)));
-            Row(sb, "Temperature:", double.IsNaN(_lastTempC) ? "not exposed by this machine" : string.Format("{0:0} C", _lastTempC));
+            double peakT = HeatTempC();
+            Row(sb, "Temperature:", double.IsNaN(_lastTempC) ? "not exposed by this machine"
+                : string.Format("{0:0} C{1}", _lastTempC,
+                    peakT - _lastTempC >= 1 ? string.Format(" (hottest in the last 2 minutes: {0:0} C)", peakT) : ""));
             if (_speedPct >= 0)
             {
                 Row(sb, "Speed vs reference:", string.Format("{0:0}%", _speedPct));
@@ -1007,6 +1060,7 @@ internal static class HeatTray
         Row(sb, "Speed near 100%:", "ignore the temperature, carry on.");
         Row(sb, string.Format("Slow, >= {0:0} C:", WarnC), "act on cooling or reduce the workload.");
         Row(sb, string.Format("Slow, < {0:0} C:", WarnC - 5), "not heat - check the power mode / AC power.");
+        Row(sb, "Hints use:", "the hottest temperature of the last 2 minutes, not just now: a heat slowdown can outlast the heat.");
         Row(sb, "Icon:", "speed % on top, GHz underneath. Grey = idle or not calibrated yet (nothing to compare with).");
         Row(sb, "Trend:", "the arrow in the tooltip and the Trend line above.");
         Row(sb, "Feels like:", "a tongue-in-cheek comparison that treats your normal speed as a current laptop. Order of magnitude only - not a benchmark.");
