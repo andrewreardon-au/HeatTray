@@ -177,3 +177,9 @@ user whose workload is a known, repeatable demo. Now:
 - Details popup: `Row()`/`Para()` helpers wrap to `DetailsWidth` (82 chars) with a hanging indent; the box is 636 px wide.
   The trend ring only takes samples whose whole smoothing window is loaded (ramp-up from idle averaged in idle
   readings and showed a fake "+479% rising").
+- Icon text fill: each of the two lines gets 14.5 of the 32 px (0.75 px margins); `DrawFit` fills the box
+  HEIGHT and squeezes horizontally (never below 60%) only when the text is too wide, so "100" is as tall as
+  "92". Verified over 130 strings that no glyph touches the canvas edge. The 16-24 px tray is the real limit:
+  two lines cannot exceed ~7 px cap height at 100% scaling. The bottom (GHz) line is Gainsboro, which is weak
+  on a LIGHT taskbar (halo helps); a theme-aware colour (registry SystemUsesLightTheme) would fix it.
+- "Clear reference..." menu item removed (recalibrating overwrites; delete baseline.ini to forget it).

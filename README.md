@@ -67,7 +67,7 @@ Details worth knowing:
 - The reference is the **median speed over the last 2 minutes** of the 5, i.e. the speed your load *settles* at. A cool CPU boosts harder for the first minutes; judging against that would leave a healthy steady demo permanently orange. The notification also shows the first-minute average so you can see how big that boost was.
 - If it reached 85 °C+ during calibration the notification warns that the reference may be low - let it cool and run it again.
 - It needs enough loaded readings (about 40% of what a full window holds); if you forgot to start the load it fails with a message rather than storing a bad reference.
-- Calibrate again after changing hardware, power mode, AC vs battery, or what the demo load does. Until you calibrate, the icon is grey and the tooltip says "Needs calibration". **Clear reference...** forgets it.
+- Calibrate again after changing hardware, power mode, AC vs battery, or what the demo load does. Until you calibrate, the icon is grey and the tooltip says "Needs calibration". To forget the reference, delete `baseline.ini` next to the exe.
 - The reference is stored in `baseline.ini` next to the exe. It is specific to one computer - don't copy it to another.
 
 ## How it works (and why it's dependency-free)
@@ -136,7 +136,7 @@ csc.exe /nologo /target:winexe /platform:x64 /out:dist\HeatTray.exe /win32icon:s
 
 `csc.exe` is the one bundled with .NET Framework 4 (`C:\Windows\Microsoft.NET\Framework64\v4.0.30319`). Or just run `build.ps1`.
 
-SHA-256 of the committed `dist/HeatTray.exe` (v1.2): `1F38F0B33757DDFFE794CDFF2FA8921EC68829C88EFC509089164453E1453C6D`
+SHA-256 of the committed `dist/HeatTray.exe` (v1.2): `19032FACE9DD1247BBEE8092F9AECCA7F88BDE65C4E17744125C04E28B768C1F`
 
 ## License
 

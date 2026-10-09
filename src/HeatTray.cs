@@ -170,8 +170,6 @@ internal static class HeatTray
         settingsItem.Click += (s, e) => ShowSettingsDialog();
         var calItem = menu.Items.Add("Calibrate to demo load (5 min)...");
         calItem.Click += (s, e) => StartCalibration();
-        var clearItem = menu.Items.Add("Clear reference...");
-        clearItem.Click += (s, e) => ClearReference();
         menu.Opening += (s, e) => { calItem.Text = _calActive ? "Cancel calibration" : "Calibrate to demo load (5 min)..."; };
         var aboutItem = menu.Items.Add("About HeatTray...");
         aboutItem.Click += (s, e) => ShowAboutDialog();
@@ -565,20 +563,6 @@ internal static class HeatTray
         _notifyIcon.ShowBalloonTip(10000, "HeatTray calibrated", msg, ToolTipIcon.None);
     }
 
-    private static void ClearReference()
-    {
-        var r = MessageBox.Show(
-            "Forget the calibrated reference?\n\nSpeed will not be judged until you calibrate again.",
-            "HeatTray", MessageBoxButtons.OKCancel, MessageBoxIcon.None);
-        if (r != DialogResult.OK) return;
-        _refPct = 0;
-        _refDate = "";
-        _refMaxTemp = double.NaN;
-        _refSamples = 0;
-        SaveBaseline();
-        Sample();
-    }
-
     private static void LoadBaseline()
     {
         try
@@ -617,14 +601,10 @@ internal static class HeatTray
     {
         try
         {
-            if (_refPct <= 0)
-            {
-                if (File.Exists(BaselinePath)) File.Delete(BaselinePath);
-                return;
-            }
+            if (_refPct <= 0) return;
             var lines = new List<string>();
             lines.Add("# HeatTray reference: busy-core speed (% of rated) of your demo load, measured while calibrating.");
-            lines.Add("# Delete this file or use 'Clear reference...' to start over.");
+            lines.Add("# Delete this file to forget it (calibrate again from the tray menu).");
             lines.Add("version=3");
             lines.Add(string.Format(CultureInfo.InvariantCulture, "ref={0:0.0}", _refPct));
             lines.Add("date=" + _refDate);
@@ -1186,12 +1166,13 @@ internal static class HeatTray
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 if (bottom == null)
                 {
-                    DrawFit(g, top, topColor, new RectangleF(1, 4, S - 2, S - 8));
+                    DrawFit(g, top, topColor, new RectangleF(1, 2, S - 2, S - 4));
                 }
                 else
                 {
-                    DrawFit(g, top, topColor, new RectangleF(1, 2, S - 2, 13));
-                    DrawFit(g, bottom, bottomColor, new RectangleF(1, 17, S - 2, 13));
+                    // Each line gets 14.5 of the 32 px (0.75 px margins), with a 1.5 px gap.
+                    DrawFit(g, top, topColor, new RectangleF(1, 0.75f, S - 2, 14.5f));
+                    DrawFit(g, bottom, bottomColor, new RectangleF(1, 16.75f, S - 2, 14.5f));
                 }
             }
 
@@ -1209,11 +1190,15 @@ internal static class HeatTray
             path.AddString(text, new FontFamily("Segoe UI"), (int)FontStyle.Bold, 100f, new PointF(0, 0), StringFormat.GenericTypographic);
             RectangleF b = path.GetBounds();
             if (b.Width <= 0 || b.Height <= 0) return;
-            float scale = Math.Min(box.Width / b.Width, box.Height / b.Height);
+            // Fill the box height; squeeze horizontally (to at most 60%) only when the
+            // text is too wide, rather than shrinking it, so "100" stays as tall as "92".
+            float fitW = box.Width / b.Width, fitH = box.Height / b.Height;
+            float sy = Math.Min(fitH, fitW / 0.6f);
+            float sx = Math.Min(sy, fitW);
             using (var m = new System.Drawing.Drawing2D.Matrix())
             {
                 m.Translate(box.X + box.Width / 2f, box.Y + box.Height / 2f);
-                m.Scale(scale, scale);
+                m.Scale(sx, sy);
                 m.Translate(-(b.X + b.Width / 2f), -(b.Y + b.Height / 2f));
                 path.Transform(m);
             }

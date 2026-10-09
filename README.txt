@@ -80,7 +80,8 @@ Notes:
     storing a bad reference.
   * Calibrate again after changing hardware, power mode, AC vs battery, or
     what the demo workload does. Until you calibrate the icon is grey and
-    the tooltip says "Needs calibration". "Clear reference..." forgets it.
+    the tooltip says "Needs calibration". To forget the reference, delete
+    baseline.ini next to the exe.
   * The reference is stored in baseline.ini next to the exe. It belongs to
     one computer: do not copy it to another.
 
