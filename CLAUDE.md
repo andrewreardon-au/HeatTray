@@ -128,7 +128,24 @@ No `?.`, no `$""` interpolation, no expression-bodied members, no
 
 - **Code signing.** Unsigned exe; see README for the Unblock / local rebuild
   workaround.
-- **Git remote / releases.** Local repo only.
+- **Releases.** There is no GitHub release or tag yet (PingTray's pattern is a
+  release zip holding the exe, linked from the README as "latest release").
+
+## Published (9 Oct 2026)
+
+- Public repo: https://github.com/andrewreardon-au/HeatTray, branch `main`
+  (renamed from `master`), created with `gh repo create ... --public --source .
+  --push`. Commit identity is set in the repo (Andrew Reardon
+  <andrewreardon@gmail.com>, as in PingTray) with a `Co-Authored-By` trailer
+  crediting Claude.
+- Before the first push the history was rewritten once (`git filter-branch`):
+  every commit was re-authored from the tool's bot account to the repo owner, and
+  two work-specific phrases in this file were replaced ("a 2-sim-feed + 5-video-feed
+  VM load" -> "a sustained heavy VM load", "a known customer demo" -> "a known,
+  repeatable demo"). Source, exe and icon blobs were byte-identical afterwards.
+  Keep workload specifics out of this repo: it is public.
+- `dist/settings.ini` and `dist/baseline.ini` are git-ignored (the baseline is the
+  user's machine-specific reference); never commit them.
 
 ## Trend, GHz and advice (added after v1.1, same version number)
 
