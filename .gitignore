@@ -3,3 +3,7 @@ settings*.ini
 baseline*.ini
 dist/settings*.ini
 dist/baseline*.ini
+
+# Notes for the AI coding assistant: kept locally, not published
+CLAUDE.md
+process.md
