@@ -62,8 +62,8 @@ internal static class HeatTray
     private const ushort VK_RETURN = 0x0D;
     private const uint FILE_TYPE_CHAR = 2;
 
-    internal const string Version = "1.2";
-    private const string VersionDate = "2026-10-09";
+    internal const string Version = "1.3";
+    private const string VersionDate = "2026-10-12";
     private const string Author = "Andrew Reardon";
     private const string AuthorEmail = "andrewreardon@gmail.com";
 
@@ -162,7 +162,7 @@ internal static class HeatTray
         if (!createdNew)
         {
             MessageBox.Show(
-                "HeatTray is already running - look for its icon in the tray (or under the ^ overflow arrow near the clock).",
+                "HeatTray is already running. Look for its icon in the tray (or under the ^ overflow arrow near the clock).",
                 // MessageBoxIcon.None: an icon would play the system notification sound.
                 "HeatTray", MessageBoxButtons.OK, MessageBoxIcon.None);
             return;
@@ -465,18 +465,18 @@ internal static class HeatTray
         {
             case "OK":
                 return (!double.IsNaN(_lastTempC) && _lastTempC >= WarnC)
-                    ? "Hot, but still holding normal speed - no action needed."
-                    : "Running at normal speed - carry on.";
+                    ? "Hot, but still holding normal speed, so no action is needed."
+                    : "Running at normal speed. Carry on.";
             case "Check cooling":
                 return eased
                     ? string.Format("Slow, and it was hot within the last 2 minutes (peak {0:0}C): a heat slowdown can outlast the heat. Act on cooling (airflow, dust, surface) or reduce the workload.", HeatTempC())
-                    : "Slow AND hot - act on cooling (airflow, dust, surface) or reduce the workload.";
+                    : "Slow AND hot: act on cooling (airflow, dust, surface) or reduce the workload.";
             case "Check power mode":
-                return "Slow but not hot - this isn't heat. Check the power mode, AC power / charger wattage, or a firmware power cap.";
+                return "Slow but not hot, so this isn't heat. Check the power mode, AC power / charger wattage, or a firmware power cap.";
             case "Heat or power cap":
                 return eased
-                    ? string.Format("Slow, and it was warm within the last 2 minutes (peak {0:0}C) - could be heat or a power limit. Watch whether it gets hotter; check power mode too.", HeatTempC())
-                    : "Slow and warm - could be heat or a power limit. Watch whether it gets hotter; check power mode too.";
+                    ? string.Format("Slow, and it was warm within the last 2 minutes (peak {0:0}C): could be heat or a power limit. Watch whether it gets hotter; check power mode too.", HeatTempC())
+                    : "Slow and warm: could be heat or a power limit. Watch whether it gets hotter; check power mode too.";
         }
         return null;
     }
@@ -651,7 +651,7 @@ internal static class HeatTray
         if (n < need)
         {
             _calSamples.Clear();
-            _lastCalResult = string.Format("{0}: failed - only {1} loaded readings (need {2}).", DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture), n, need);
+            _lastCalResult = string.Format("{0}: failed. Only {1} loaded readings (need {2}).", DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture), n, need);
             _notifyIcon.ShowBalloonTip(8000, "HeatTray calibration failed",
                 string.Format("Only {0} loaded readings in 5 minutes (need {1}). Start the demo load first, then calibrate again.", n, need),
                 ToolTipIcon.None);
@@ -681,7 +681,7 @@ internal static class HeatTray
             _refPct, double.IsNaN(g) ? "" : string.Format(" (~{0:0.0} GHz)", g), firstAvg);
         if (!double.IsNaN(_refMaxTemp) && _refMaxTemp >= WarnC)
         {
-            msg += string.Format(" It reached {0:0} C during calibration, so the reference may be low - let it cool and run it again.", _refMaxTemp);
+            msg += string.Format(" It reached {0:0} C during calibration, so the reference may be low. Let it cool and run it again.", _refMaxTemp);
         }
         _lastCalResult = DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + ": " + msg;
         _notifyIcon.ShowBalloonTip(10000, "HeatTray calibrated", msg, ToolTipIcon.None);
@@ -773,6 +773,26 @@ internal static class HeatTray
     private static bool TryNum(string s, double min, double max, out double v)
     {
         return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out v) && v >= min && v <= max;
+    }
+
+    // What is wrong with the entries in the Settings dialog, in plain words, or null if all are fine.
+    // field says which box the cursor belongs in: 0 interval, 1 hot temperature, 2 idle gate, 3 amber,
+    // 4 red. The first problem, top to bottom, is the one reported.
+    private static string SettingsProblem(string interval, string warn, string gate, string amber, string red, out int field)
+    {
+        double v, a, r;
+        field = 0;
+        if (!TryNum(interval.Trim(), 1, 60, out v)) return "Sample every: enter a number of seconds from 1 to 60.";
+        field = 1;
+        if (!TryNum(warn.Trim(), 30, 120, out v)) return "Count as hot at: enter a temperature from 30 to 120 C.";
+        field = 2;
+        if (!TryNum(gate.Trim(), 5, 80, out v)) return "Idle below CPU load: enter a percentage from 5 to 80.";
+        field = 3;
+        if (!TryNum(amber.Trim(), 10, 100, out a)) return "Amber below: enter a percentage from 10 to 100.";
+        field = 4;
+        if (!TryNum(red.Trim(), 10, 100, out r)) return "Red below: enter a percentage from 10 to 100.";
+        if (r > a) return "Red below must not be higher than Amber below.";
+        return null;
     }
 
     // Returns false if the process should exit without starting the tray
@@ -942,12 +962,41 @@ internal static class HeatTray
     // Dialogs
     // ------------------------------------------------------------------
 
+    // The dialogs are modal, but the tray icon and its menu keep answering while one is open, so a second
+    // click used to stack another copy on top of the first: they open at the same spot, so it looked like
+    // one dialog until the top one was closed. Bring the open one forward instead. Returns true if a
+    // dialog with this name was already open. A dialog opened from inside another (Settings from the menu
+    // while Details is open) sits above it and the first one is disabled, so the one to bring forward
+    // is the one opened last - the one that takes input - not the dialog that was asked for.
+    private static bool ActivateOpenDialog(string name)
+    {
+        Form top = DialogToActivate(name);
+        if (top == null) return false;
+        if (top.WindowState == FormWindowState.Minimized) top.WindowState = FormWindowState.Normal;
+        top.Activate();
+        return true;
+    }
+
+    // The open dialog a request for the dialog called name should bring forward: the innermost one if a
+    // dialog of that name is already open, otherwise null (the caller creates it).
+    private static Form DialogToActivate(string name)
+    {
+        bool isOpen = false;
+        foreach (Form f in Application.OpenForms)
+        {
+            if (f.Name == name) isOpen = true;
+        }
+        return isOpen ? Application.OpenForms[Application.OpenForms.Count - 1] : null;
+    }
+
     // Deliberately not a MessageBox: any MessageBox with an icon plays the
     // system notification sound, which is jarring for a plain About box.
     private static void ShowAboutDialog()
     {
+        if (ActivateOpenDialog("about")) return;
         using (var form = new Form())
         {
+            form.Name = "about";
             form.Text = "About HeatTray";
             form.FormBorderStyle = FormBorderStyle.FixedDialog;
             form.StartPosition = FormStartPosition.CenterScreen;
@@ -1070,11 +1119,11 @@ internal static class HeatTray
             }
             else if (_calActive)
             {
-                Row(sb, "Status:", "Calibrating - keep the demo load running until the icon stops showing CAL.");
+                Row(sb, "Status:", "Calibrating: keep the demo load running until the icon stops showing CAL.");
             }
             else if (_loaded)
             {
-                Row(sb, "Status:", "Under load but no reference yet - right-click the icon > Calibrate to demo load...");
+                Row(sb, "Status:", "Under load but no reference yet: right-click the icon > Calibrate to demo load...");
             }
             else if (_refPct > 0)
             {
@@ -1083,7 +1132,7 @@ internal static class HeatTray
             }
             else
             {
-                Row(sb, "Status:", "Idle (load below " + GateUtil.ToString("0") + "%), and no reference yet - right-click the icon > Calibrate to demo load...");
+                Row(sb, "Status:", "Idle (load below " + GateUtil.ToString("0") + "%), and no reference yet: right-click the icon > Calibrate to demo load...");
             }
         }
         sb.AppendLine();
@@ -1099,7 +1148,7 @@ internal static class HeatTray
         }
         else
         {
-            Row(sb, "", "none yet - right-click the icon > Calibrate to demo load...");
+            Row(sb, "", "none yet: right-click the icon > Calibrate to demo load...");
         }
         if (_lastCalResult.Length > 0) Row(sb, "Last calibration:", _lastCalResult);
         sb.AppendLine();
@@ -1110,20 +1159,43 @@ internal static class HeatTray
         sb.AppendLine("HOW TO READ IT");
         Row(sb, "Speed near 100%:", "ignore the temperature, carry on.");
         Row(sb, string.Format("Slow, >= {0:0} C:", WarnC), "act on cooling or reduce the workload.");
-        Row(sb, string.Format("Slow, < {0:0} C:", WarnC - 5), "not heat - check the power mode / AC power.");
+        Row(sb, string.Format("Slow, < {0:0} C:", WarnC - 5), "not heat: check the power mode / AC power.");
         Row(sb, "Hints use:", "the hottest temperature of the last 2 minutes, not just now: a heat slowdown can outlast the heat.");
         Row(sb, "Icon:", "your speed as a % of your normal (100 = as fast as your calibration run, more = faster), or GHz, or both: choose in Settings. Grey = no verdict: not calibrated yet (it then shows GHz), or idle with a low speed.");
         Row(sb, "Trend:", "the arrow in the tooltip and the Trend line above.");
-        Row(sb, "Feels like:", "a tongue-in-cheek comparison of how your laptop is running right now with an old computer (your normal speed counts as a current laptop). Order of magnitude only - not a benchmark.");
+        Row(sb, "Feels like:", "a tongue-in-cheek comparison of how your laptop is running right now with an old computer (your normal speed counts as a current laptop). Order of magnitude only, not a benchmark.");
         sb.AppendLine();
         Para(sb, "The reference is the median busy-core speed over the last 2 minutes of a 5-minute calibration run (the settled speed, not the initial boost). Calibrate again after changing the hardware, power mode or what your demo load does.");
         return sb.ToString().Replace("\r\n", "\n").Replace("\n", "\r\n");
     }
 
+    // The Details window is as tall as its text, so nothing needs scrolling. Only a screen too small for the whole text (a low-resolution or heavily
+    // zoomed display) keeps the scrollbar, and the box is then as tall as fits, in whole lines so no line is cut in half.
+    private const int DetailsBoxPad = 6;   // the box's 3-D border (2 x 2 px) and a little air
+
+    // Height of the Details text box for this many lines of this height, and whether it still has to scroll. availableHeight is the most it may take.
+    private static int DetailsBoxHeight(int lines, int lineHeight, int availableHeight, out bool scrolls)
+    {
+        if (lineHeight < 1) lineHeight = 1;
+        int need = lines * lineHeight + DetailsBoxPad;
+        scrolls = need > availableHeight;
+        if (!scrolls) return need;
+        return Math.Max((availableHeight - DetailsBoxPad) / lineHeight, 3) * lineHeight + DetailsBoxPad;
+    }
+
     private static void ShowDetailsDialog()
     {
+        ShowDetailsWindow(Screen.FromPoint(Control.MousePosition).WorkingArea.Height);
+    }
+
+    // availableHeight: the height of the working area (the screen without the taskbar) of the screen the window opens on. A parameter so a test
+    // can ask what happens on a small screen.
+    private static void ShowDetailsWindow(int availableHeight)
+    {
+        if (ActivateOpenDialog("details")) return;
         using (var form = new Form())
         {
+            form.Name = "details";
             form.Text = "HeatTray";
             form.FormBorderStyle = FormBorderStyle.FixedDialog;
             form.StartPosition = FormStartPosition.CenterScreen;
@@ -1131,18 +1203,32 @@ internal static class HeatTray
             form.MaximizeBox = false;
             form.ShowInTaskbar = false;
             form.ClientSize = new Size(660, 520);
+            int frame = form.Height - form.ClientSize.Height;   // title bar and borders, known once the client size is set
 
+            string text = DetailsText();
             var box = new TextBox
             {
-                Left = 12, Top = 12, Width = 636, Height = 460,
-                Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
+                Name = "detailsBox",
+                Left = 12, Top = 12, Width = 636,
+                Multiline = true, ReadOnly = true,
                 Font = new Font("Consolas", 9f),
-                Text = DetailsText(),
+                Text = text,
                 BackColor = SystemColors.Window
             };
-            var copyButton = new Button { Text = "Copy", Left = 478, Top = 482, Width = 80 };
+            // The box counts the empty last line after the final line break too. The line height is the one the box itself draws with (GDI), 1 px
+            // less than Font.Height here.
+            int lines = text.Split('\n').Length;
+            int lineHeight = TextRenderer.MeasureText("Xg", box.Font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding).Height;
+            bool scrolls;
+            // what the box may take: the screen minus the title bar and borders, the margins and the button row (12 + 10 + 23 + 15), and 20 px of air
+            box.Height = DetailsBoxHeight(lines, lineHeight, availableHeight - frame - (12 + 10 + 23 + 15) - 20, out scrolls);
+            box.ScrollBars = scrolls ? ScrollBars.Vertical : ScrollBars.None;
+            int buttonTop = box.Bottom + 10;
+            form.ClientSize = new Size(660, buttonTop + 23 + 15);
+
+            var copyButton = new Button { Text = "Copy", Left = 478, Top = buttonTop, Width = 80 };
             copyButton.Click += (s, e) => { try { Clipboard.SetText(box.Text); } catch { } };
-            var okButton = new Button { Text = "Close", Left = 568, Top = 482, Width = 80, DialogResult = DialogResult.OK };
+            var okButton = new Button { Text = "Close", Left = 568, Top = buttonTop, Width = 80, DialogResult = DialogResult.OK };
 
             form.Controls.Add(box);
             form.Controls.Add(copyButton);
@@ -1207,55 +1293,88 @@ internal static class HeatTray
         }
     }
 
-    private static TextBox AddRow(Form form, string label, string value, int top)
+    private static TextBox AddRow(Form form, string label, string value, int top, string name)
     {
         form.Controls.Add(new Label { Text = label, Left = 15, Top = top + 3, Width = 215 });
-        var box = new TextBox { Text = value, Left = 240, Top = top, Width = 80 };
+        var box = new TextBox { Name = name, Text = value, Left = 240, Top = top, Width = 70 };
         form.Controls.Add(box);
         return box;
     }
 
     private static void ShowSettingsDialog()
     {
+        if (ActivateOpenDialog("settings")) return;
         using (var form = new Form())
         {
+            form.Name = "settings";
             form.Text = "HeatTray Settings";
             form.FormBorderStyle = FormBorderStyle.FixedDialog;
             form.StartPosition = FormStartPosition.CenterScreen;
             form.MinimizeBox = false;
             form.MaximizeBox = false;
-            form.ClientSize = new Size(335, 297);
+            form.ClientSize = new Size(325, 297);
+            // The inputs are 70 px wide: the "Icon shows" drop-down needs about 67 px to show "Percent" in full.
 
             form.Controls.Add(new Label { Text = "Icon shows:", Left = 15, Top = 18, Width = 215 });
-            var showBox = new ComboBox { Left = 240, Top = 15, Width = 80, DropDownStyle = ComboBoxStyle.DropDownList };
+            var showBox = new ComboBox { Left = 240, Top = 15, Width = 70, DropDownStyle = ComboBoxStyle.DropDownList };
             showBox.Items.AddRange(new object[] { "Percent", "GHz", "Both" });   // index = ShowPercent / ShowGhz / ShowBoth
             showBox.SelectedIndex = IconShows;
             form.Controls.Add(showBox);
 
-            var intervalBox = AddRow(form, "Sample every (sec):", (IntervalMs / 1000).ToString(CultureInfo.InvariantCulture), 47);
-            var warnBox = AddRow(form, "Count as hot at (C):", WarnC.ToString(CultureInfo.InvariantCulture), 79);
-            var gateBox = AddRow(form, "Idle below CPU load (%):", GateUtil.ToString(CultureInfo.InvariantCulture), 111);
-            var amberBox = AddRow(form, "Amber below (% of reference):", AmberPct.ToString(CultureInfo.InvariantCulture), 143);
-            var redBox = AddRow(form, "Red below (% of reference):", RedPct.ToString(CultureInfo.InvariantCulture), 175);
+            var intervalBox = AddRow(form, "Sample every (sec):", (IntervalMs / 1000).ToString(CultureInfo.InvariantCulture), 47, "intervalBox");
+            var warnBox = AddRow(form, "Count as hot at (C):", WarnC.ToString(CultureInfo.InvariantCulture), 79, "warnBox");
+            var gateBox = AddRow(form, "Idle below CPU load (%):", GateUtil.ToString(CultureInfo.InvariantCulture), 111, "gateBox");
+            var amberBox = AddRow(form, "Amber below (% of reference):", AmberPct.ToString(CultureInfo.InvariantCulture), 143, "amberBox");
+            var redBox = AddRow(form, "Red below (% of reference):", RedPct.ToString(CultureInfo.InvariantCulture), 175, "redBox");
 
-            form.Controls.Add(new Label
+            // The hint, which turns into the message when OK finds something wrong (see FormClosing below).
+            var hint = new Label
             {
+                Name = "hint",
                 Text = "The icon colour follows speed only. \"Hot\" just changes the hint: slow and hot says Check cooling, slow and cool says Check power mode.",
-                Left = 15, Top = 212, Width = 305, Height = 48, ForeColor = SystemColors.GrayText
-            });
+                Left = 15, Top = 212, Width = 295, Height = 48, ForeColor = SystemColors.GrayText
+            };
+            form.Controls.Add(hint);
 
-            var okButton = new Button { Text = "OK", Left = 130, Top = 262, Width = 80, DialogResult = DialogResult.OK };
-            var cancelButton = new Button { Text = "Cancel", Left = 220, Top = 262, Width = 80, DialogResult = DialogResult.Cancel };
+            var okButton = new Button { Text = "OK", Left = 120, Top = 262, Width = 80, DialogResult = DialogResult.OK };
+            var cancelButton = new Button { Text = "Cancel", Left = 210, Top = 262, Width = 80, DialogResult = DialogResult.Cancel };
             form.Controls.Add(okButton);
             form.Controls.Add(cancelButton);
             form.AcceptButton = okButton;
             form.CancelButton = cancelButton;
+
+            // OK is checked before the dialog closes: if something is wrong the dialog stays open, says what
+            // in the hint's place (in red) and puts the cursor in that box. (It used to close first, throw
+            // away everything typed and show one message listing every range.) Editing any box brings the
+            // hint back.
+            string hintText = hint.Text;
+            form.FormClosing += (s, e) =>
+            {
+                if (form.DialogResult != DialogResult.OK) return;
+                int field;
+                string problem = SettingsProblem(intervalBox.Text, warnBox.Text, gateBox.Text, amberBox.Text, redBox.Text, out field);
+                if (problem == null) return;
+                e.Cancel = true;
+                hint.Text = problem;
+                hint.ForeColor = Color.Firebrick;
+                TextBox bad = field == 0 ? intervalBox : (field == 1 ? warnBox : (field == 2 ? gateBox : (field == 3 ? amberBox : redBox)));
+                bad.Focus();
+                bad.SelectAll();
+            };
+            EventHandler edited = (s, e) =>
+            {
+                hint.Text = hintText;
+                hint.ForeColor = SystemColors.GrayText;
+            };
+            foreach (TextBox box in new[] { intervalBox, warnBox, gateBox, amberBox, redBox }) box.TextChanged += edited;
 
             if (form.ShowDialog() != DialogResult.OK)
             {
                 return;
             }
 
+            // Only an OK with nothing wrong gets here (FormClosing above), so all of this parses; the
+            // check is a guard, not a second set of rules.
             double interval = 0, warn = 0, gate = 0, amber = 0, red = 0;
             bool ok = TryNum(intervalBox.Text.Trim(), 1, 60, out interval) &&
                       TryNum(warnBox.Text.Trim(), 30, 120, out warn) &&
@@ -1265,8 +1384,6 @@ internal static class HeatTray
 
             if (!ok || red > amber)
             {
-                MessageBox.Show("Check the values: interval 1-60 s, hot temperature 30-120 C, idle gate 5-80%, speeds 10-100% (red not above amber).",
-                    "HeatTray", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -1318,7 +1435,9 @@ internal static class HeatTray
         {
             case Tone.Good: return light ? Color.FromArgb(0, 130, 0) : Color.LimeGreen;
             case Tone.Warn: return light ? Color.FromArgb(205, 100, 0) : Color.Orange;
-            case Tone.Bad: return light ? Color.FromArgb(200, 0, 0) : Color.Red;
+            // Bad: pure Color.Red was only 3.9:1 on a maroon accent taskbar; this lighter red is 5.0:1
+            // there (4.1 -> 5.2 on Windows dark grey) and still clearly red.
+            case Tone.Bad: return light ? Color.FromArgb(200, 0, 0) : Color.FromArgb(255, 85, 85);
             case Tone.Cal: return light ? Color.FromArgb(0, 120, 170) : Color.Cyan;
             default: return light ? Color.FromArgb(35, 35, 35) : Color.Gainsboro;
         }
