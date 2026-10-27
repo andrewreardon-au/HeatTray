@@ -1,6 +1,6 @@
 HEATTRAY
 
-v1.3 (2026-10-12)
+v2.0 (2026-10-28)
 Author: Andrew Reardon, andrewreardon@gmail.com
 
 Shows in the system tray, next to the clock, whether your CPU is really
@@ -19,18 +19,17 @@ should, and does it matter right now? Three things set it apart:
     Pentium 4 2.4GHz from 2002": a feel for how bad "slow" is that a
     clock reading never gives you. It is an order-of-magnitude joke with a
     scale behind it (see THE READY RECKONER below).
-  * It measures against your own workload, not a spec sheet. Calibrate
-    once, with the laptop cool and your real load running, and 100 means
-    "as fast as this load normally runs on this machine" (see CALIBRATE
-    below). Rated and boost clocks cannot tell you that.
-  * It boils it all down to one number: your speed as a % of normal. 98 is
-    no real slowdown, 75 is a quarter slower, and a hot CPU that is still
-    at full speed stays green. It is a verdict, not a dashboard. Windows'
-    own throttle counters can report "no throttling" while a chip is pinned
-    at its power cap, and HWiNFO's Average Effective Clock counts idle time
-    (accurate, but a different question), so a lightly loaded CPU can look
-    half-throttled while its working cores run at full speed. HeatTray
-    reads the busy-core speed instead.
+  * There is nothing to set up. The number is your busy cores' speed as a
+    % of the CPU's rated clock, the figure Windows shows in This PC >
+    Properties (for example 3.30 GHz). No calibration, no learning period,
+    no file to keep.
+  * It boils it all down to one number and one colour. A hot CPU that is
+    still at full speed stays green. It is a verdict, not a dashboard.
+    Windows' own throttle counters can report "no throttling" while a chip
+    is pinned at its power cap, and HWiNFO's Average Effective Clock counts
+    idle time (accurate, but a different question), so a lightly loaded
+    CPU can look half-throttled while its working cores run at full speed.
+    HeatTray reads the busy-core speed instead.
 
 It also needs nothing but Windows. HeatTray is one plain C# file compiled
 into one small exe, with no drivers, no admin rights and no other tools
@@ -47,7 +46,8 @@ GETTING STARTED
   1. Double-click HeatTray.exe (in the dist folder).
   2. Don't see it? Click the small ^ arrow near the clock to show hidden
      tray icons.
-  3. Calibrate it once for your workload (see CALIBRATE below).
+  3. Give it about 10 seconds: the icon is grey while it takes its first
+     readings.
   4. To close it, right-click the icon and choose Exit.
 
 
@@ -65,64 +65,40 @@ STARTING AUTOMATICALLY AT LOGIN
   3. Drag the shortcut into that folder. Delete it to turn this off.
 
 
-CALIBRATE TO YOUR DEMO LOAD (DO THIS ONCE)
+UPGRADING FROM v1.x
 
-HeatTray cannot know what "full speed" means for your workload until you
-show it. It measures your workload once, while the computer is cool, and
-compares everything against that. ("Demo load" is the app's name for
-whatever work you care about: a demo, a build, a render.)
-
-  1. Let the laptop cool (idle on a desk, normal ventilation, on AC power
-     in the power mode you demo in).
-  2. Start your full demo workload.
-  3. Right-click the icon, choose "Calibrate to demo load (5 min)...", OK.
-  4. Keep the workload running while the icon shows CAL and a countdown.
-     A notification (also recorded in Details) reports the result.
-
-Notes:
-  * The reference is the MEDIAN speed over the last 2 minutes of the 5,
-    the speed your workload settles at. A cool CPU boosts harder for the
-    first minutes, and comparing against that would leave a healthy demo
-    orange.
-  * If it reached 85 C or more during calibration you get a warning that
-    the reference may be low: let it cool and run it again.
-  * If you forgot to start the workload it fails with a message instead of
-    storing a bad reference.
-  * Calibrate again after changing hardware, power mode, AC vs battery, or
-    what the demo workload does. Until you calibrate the icon is grey
-    (showing the speed in GHz) and, while the CPU is working, the tooltip
-    says "Needs calibration". To forget the reference, delete baseline.ini
-    next to the exe.
-  * The reference is stored in baseline.ini next to the exe. It belongs to
-    one computer: do not copy it to another.
+Exit the old HeatTray first (only one copy can run), then replace the exe.
+Calibration is gone, so the number now means something different: a % of
+the CPU's RATED speed, not of your own demo workload. Your old baseline.ini
+is no longer read and can be deleted. Your settings.ini still loads; if it
+holds the old default thresholds (amber 85, red 70) they move to the new
+defaults (70 and 40), and any other values you chose are kept. If you want
+calibration back, v1.3 is still on the GitHub releases page.
 
 
 WHAT THE ICON SHOWS
 
 One big number, so it can be read at a glance:
 
-     98      speed: % of your reference (see CALIBRATE above)
+     92      speed: % of the CPU's rated clock
 
-The number is your CPU's speed (while it is working) as a percentage of
-the reference you calibrated from your own demo workload. 100 = as fast as
-that workload normally runs, and above 100 = faster than it ran during
-calibration. Lower means something (heat, a power limit, battery, or a
-power mode) is holding it back. The COLOUR is about speed only, not
-temperature:
+The number is your CPU's speed while it is working, as a percentage of its
+rated clock. 100 means the working cores run at the speed Windows shows in
+This PC > Properties; above 100 is boost. The COLOUR is about speed only,
+not temperature:
 
-  Green         At or near the reference speed, or better (85% and up).
-                Also shown while the CPU is idle and at least that fast,
-                so the icon does not change colour every time the load
-                dips.
-  Orange        Noticeably slowed (under 85%) while the CPU is working
+  Green         The load is light (under the idle threshold, 30% CPU
+                load by default), or the CPU is working and running at
+                70% of its rated speed or more. The icon stays green
+                when the load dips, so it does not change colour every
+                few seconds.
+  Orange        Noticeably slowed (under 70%) while the CPU is working
                 (Settings and the command line call this colour amber)
-  Red           Heavily slowed (under 70%) while the CPU is working
-  Grey          No verdict. Either you have not calibrated yet (there is
-                nothing to take a percentage of, so the icon shows the
-                speed in GHz), or the CPU is idle and its speed is under
-                85% of your reference. An idle CPU slows itself down on
-                purpose, so an idle reading is never orange or red.
-  Cyan CAL      Calibration in progress (with a countdown underneath)
+  Red           Heavily slowed (under 40%) while the CPU is working
+  Orange HOT    The load is light but the CPU is at 85 C or more. It is
+                a word, not a number, so it cannot be mistaken for a
+                slow reading.
+  Grey number   Starting up: the first readings take about 10 seconds
   Grey ?        CPU counters not available (see TROUBLESHOOTING)
 
 The text colours follow the Windows taskbar theme: bright shades on a dark
@@ -134,44 +110,95 @@ Settings..., and pick "Icon shows": Percent (the default), GHz (the current
 speed of the working cores, e.g. 3.2) or Both (percent over GHz on two
 lines, with smaller digits). The hover text always has both.
 
-Hover over the icon for the details, for example:
+
+WHY ISN'T IT 100%?
+
+100% is the CPU's RATED (base) clock. Real life lands around it, not on it:
+
+  * A busy laptop often sits a little under it: power limits, battery, a
+    power-saver mode, or just heat.
+  * A lightly loaded CPU often boosts above it. Numbers over 100 are
+    normal, and green.
+  * At light load (under the idle threshold, 30% CPU load by default) the
+    cores choose their own speed to save power, which can be well under or
+    over the rated one. That says nothing about heat, so a light-load
+    reading is never orange or red.
+
+Only a big shortfall UNDER LOAD means something is holding it back. That
+is what the orange and red thresholds look for.
+
+
+THE HOVER TEXT
+
+Hover over the icon for the details. Loaded and healthy:
+
+  Speed 92% 3.0GHz
+  Working hard, all fine
+  68C | load 74%
+
+Slow and hot (the temperature moves into the second line, and the fourth
+line is the ready reckoner):
 
   Speed 18% 0.6GHz v
-  74C | load 55%
-  Check cooling (peaked 96C)
+  Too hot (now 73C, peak 96C)
+  Clear vents, lift laptop
   Like a Pentium 4 2.4GHz from 2002
 
-That is, line by line: speed, GHz and a trend arrow (up, steady or down
-over about the last 5 minutes of load); temperature and CPU load; a hint;
-and, when the icon is orange or red, a tongue-in-cheek "ready reckoner"
-line (see THE READY RECKONER below). The hints are:
+Light load:
 
-  OK                 Normal speed. Even if it is hot, you are not being
-                     slowed, so carry on.
-  Check cooling      Slow AND hot (85 C or more): airflow, dust, surface,
-                     or reduce the load. "(peaked 96C)" means it is no
-                     longer that hot but was within the last 2 minutes:
-                     a heat slowdown can outlast the heat.
-  Check power mode   Slow, with no sign of heat (under 80 C, and not that
-                     hot at any point in the last 2 minutes; it is also
-                     what you get with no temperature sensor): check the
-                     Windows power mode, AC power / charger, or a firmware
-                     power cap.
-  Heat or power cap  Slow and warm (80-85 C, now or within the last 2
-                     minutes): could be either.
-  Idle, or           No verdict is being made: idle (the icon stays
-  Needs calibration  green, or goes grey if the speed is low) or not
-                     calibrated yet (grey GHz). See Grey above.
+  Speed 110% 3.6GHz
+  Light load: core speed is variable
+  52C | load 8%
+
+Line 1 is always the speed, the GHz, and a trend arrow when there is one
+(up, steady or down over about the last 5 minutes of load). Lines 2 and 3
+give the verdict and what to do:
+
+  Working hard, all fine
+      Loaded and at 70% or more of rated speed. Even if it is hot, you are
+      not being slowed, so carry on.
+  Boosting: faster than rated
+      Loaded and above 100%: the CPU is boosting past its rated clock.
+  Slower, and hot / Too hot, very slow (96C)
+      Slow AND hot (85 C or more): clear the vents, lift the laptop off
+      soft surfaces, or reduce the load. "(now 73C, peak 96C)" means it is
+      no longer that hot but was within the last 2 minutes: a heat
+      slowdown can outlast the heat.
+  Slower, not hot (52C)
+      Slow with no sign of heat (under 80 C, and not that hot at any point
+      in the last 2 minutes): plug in, check the Windows power mode, the
+      charger wattage, or a firmware power cap.
+  Slower, warm (80C)
+      Slow and warm (80-85 C): could be heat or a power limit, so watch
+      whether it gets hotter.
+  Slower, no temp sensor
+      Slow, and this computer reports no temperature, so the cause is
+      unknown: try the power mode, the charger and the vents.
+  Light load: core speed is variable
+      The load is under the idle threshold, so there is nothing to judge.
+  Hot at light load
+      The load is light but the CPU is at 85 C or more: something is
+      trapping heat.
+  Starting up
+      The first readings after launch.
+
+"Far slower" replaces "Slower" when the icon is red. Whenever the heat has
+already eased, a slow verdict can end in "(now 60C, peak 82C)" in the same
+way as the hot ones.
 
 Click the icon for a full breakdown (temperature and its 2-minute peak,
-slowdown, trend, advice, and your reference).
+the verdict, how far below rated speed it is, trend, advice, and the rated
+clock the percentage is taken from).
 
-  Speed shown   Roughly                What to do
-  85 and up     Little or no slowdown  Ignore the temperature, let it ride
-  70-85         Mild to moderate       Fine for bursts; if it stays here
-                                       AND it is hot, improve airflow
-  Under 70      Heavy                  Address cooling (or the power
-                                       mode) now
+  Speed shown (under load)   Roughly        What to do
+  70 and up                  Little or no   Ignore the temperature, let it
+                             slowdown       ride
+  40-70                      Noticeable     Fine for bursts; if it stays
+                                            here AND it is hot, improve
+                                            airflow; if it is cool, check
+                                            the power mode and charger
+  Under 40                   Heavy          Address cooling (or the power
+                                            mode) now
 
 A brief dip is normal. What matters is when it STAYS low.
 
@@ -180,14 +207,14 @@ THE READY RECKONER
 
 When the icon is orange or red, the tooltip gets a "Like a ..." line (and
 Details gets a "Feels like" row): a tongue-in-cheek comparison of how your
-laptop is running right now with an old computer (your normal speed counts
-as a current laptop), and the year that CPU debuted. It compares one core's
-speed only: an order-of-magnitude feel for "how bad is this", not a
+laptop is running right now with an old computer (100% of rated speed
+counts as a current laptop), and the year that CPU debuted. It compares one
+core's speed only: an order-of-magnitude feel for "how bad is this", not a
 benchmark.
 
-  Speed (% of your normal)   Feels like
-  85 and up                  as intended (no line shown)
-  62-85                      a Core i5-4690 from 2014
+  Speed (% of rated)         Feels like
+  70 and up                  as intended (no line shown)
+  62-70                      a Core i5-4690 from 2014
   46-62                      a Core i5-2500K from 2011
   32-46                      a Core 2 Duo E8400 from 2008
   21-32                      a Core 2 Duo E6600 from 2006
@@ -202,7 +229,7 @@ benchmark.
   under 0.014                an abacus from 2400 BC
 
 The "Amber below" setting (the orange threshold) also decides when the
-line appears. It is not shown while the CPU is idle or not calibrated.
+line appears. It is not shown while the CPU is idle or starting up.
 
 
 SETTINGS
@@ -221,12 +248,11 @@ COMMAND-LINE OPTIONS
 
   -i <sec>, --interval=<sec>  seconds between samples (default 2)
   --warn=<C>                  temperature that counts as hot, for the
-                              hints and the calibration warning
-                              (default 85)
+                              hints and the idle HOT warning (default 85)
   --gate=<pct>                CPU load below which it counts as idle
                               (default 30)
-  --amber=<pct>               orange below this speed % (default 85)
-  --red=<pct>                 red below this speed % (default 70)
+  --amber=<pct>               orange below this % of rated (default 70)
+  --red=<pct>                 red below this % of rated (default 40)
   --show=<percent|ghz|both>   what the icon shows (default percent)
   --diag                      show which counters work + live samples
   -h, --help                  show help and exit
@@ -248,13 +274,14 @@ off.
   * Grey "?"        The CPU counters could not be opened. HeatTray needs an
                     English-language Windows for the counter names.
   * "no temp"       This computer does not expose a temperature sensor to
-                    Windows. Speed still works, but with no temperature a
-                    slow reading always says Check power mode: read it as
-                    "slow, cause unknown".
+                    Windows. Speed still works, and a slow reading then
+                    says "no temp sensor" because the cause is unknown.
   * Temperature     Windows' reading is often a few degrees different from
                     the CPU's own sensor. Adjust the "hot" temperature in
                     Settings to suit.
-  * Grey, "Needs calibration"   You have not calibrated yet (see above).
+  * Orange all the time, but the computer performs normally
+                    The default thresholds suit a typical laptop. Lower
+                    "Amber below" in Settings.
 
 
 LIMITS
@@ -266,31 +293,32 @@ for certain whether heat, a firmware power cap, running on battery, or a
 Windows power mode such as "Best power efficiency" is the cause. The hint
 is a rule of thumb. Check the power mode before blaming the cooling.
 
-The reference is only as good as the calibration: a different power mode,
-AC vs battery, or a workload that changes shape will make the number read
-wrongly until you calibrate again. Calibrating while it heats up and
-throttles gives a low reference (you get a warning if it reached 85 C).
+The thresholds are for a typical laptop. On battery, or in a power-saving
+mode, a healthy CPU can run at 60-80% of its rated speed, so expect orange
+more often there, and the hint ("plug in, check the power mode") is then
+the right one.
+
+Idle hides a slowdown at low load. Below the idle threshold (30% CPU load
+by default) nothing is judged, so a firmware clamp that bites at light load
+shows green. The only exception is HOT: an idle CPU at 85 C or more turns
+the icon orange.
 
 A heat slowdown can outlast the heat. After a firmware thermal clamp the
 CPU can stay pinned at its lowest speed for 30-40 seconds while the
 temperature falls back below 80 C (seen on a laptop resting on a pillow:
 96 C, then about 0.5 GHz for 36+ seconds until it had cooled to about
 73 C). So the hints go by the hottest temperature of the last 2 minutes,
-not just the current one, and say so ("Check cooling (peaked 96C)"). A
-clamp that outlasts those 2 minutes can still read as "Check power mode";
+not just the current one, and say so ("Too hot (now 73C, peak 96C)"). A
+clamp that outlasts those 2 minutes can still read as "Slower, not hot";
 if it was hot a few minutes ago, treat it as cooling.
 
-Until you calibrate there is no percentage to show, so the icon shows the
-speed in GHz (grey), and the percentage in the hover text is then a
-percentage of the CPU's RATED speed, a different scale from the coloured
-readings (a percentage of your reference).
+The rated clock comes from the registry (~MHz, the speed Windows shows in
+This PC > Properties). If a computer does not report it (some virtual
+machines), the GHz is left out and the percentages still work.
 
 The light/dark choice follows the Windows system theme setting. With an
 unusual taskbar colour (a very light accent colour, high contrast) the icon
 text can be harder to read; the outline helps.
-
-A sleep or resume during a calibration can cut it short; just run it
-again.
 
 If Windows blocks the exe because it was copied from a network share or USB
 drive, right-click it, choose Properties, and tick Unblock. Or rebuild it on
@@ -310,35 +338,42 @@ It reads three standard Windows performance counters:
   * Thermal Zone Information\Temperature: the hottest ACPI thermal zone.
 
 Readings are smoothed over the last 5 samples. Above the idle threshold
-(30% load) the speed is compared with the reference and coloured green,
-orange or red. Below it the same percentage is shown, green (or grey if it
-is low) and never orange or red.
+(30% load) the speed is coloured green, orange or red by the thresholds.
+Below it the same percentage is shown in green, and never orange or red;
+the one exception is HOT when the temperature is at or above the hot
+threshold.
 
 
-WHAT'S NEW IN v1.3
+WHAT'S NEW IN v2.0
 
-  * Settings checks what you type. A number that is out of range keeps the
-    box open instead of closing it: the hint at the bottom turns red, says
-    which setting and what range it takes, and the cursor goes to that
-    box. Before, the box closed, threw away everything you had typed and
-    showed one message listing every range.
-  * One window at a time. Clicking the icon again (or a menu item) while
-    Details, Settings or About is open brings the open window to the front
-    instead of stacking another copy on top.
-  * The Details window is as tall as its text, so there is nothing to
-    scroll on a normal screen. On a screen too small to hold it all, it
-    keeps its scrollbar.
-  * A lighter red on dark taskbars, easier to see (about 5:1 contrast
-    against a dark taskbar, up from about 4:1). The red on a light taskbar
-    is unchanged.
-  * Your calibration and saved settings carry over from earlier versions.
+  * No calibration. The number is the busy-core speed as a % of the CPU's
+    rated clock, so there is nothing to set up, no baseline.ini and no
+    learning period. (The v1.x reference was one person's demo workload; a
+    workload that changes shape made it stale.)
+  * New defaults for the colours: orange under 70%, red under 40% of rated
+    speed. If your settings.ini still has the old defaults (85 and 70)
+    they move to these; custom values are kept.
+  * Light load looks reassuring. The icon stays green while the load is
+    under the idle threshold, and the tooltip says why the figure is not
+    100: "Light load: core speed is variable". Values over 100 are shown
+    as they are, with the tag "Boosting: faster than rated".
+  * HOT at light load. A lightly loaded CPU at 85 C or more shows the word
+    HOT in orange instead of a number.
+  * A tooltip that says what to do. Slow readings now have a verdict line
+    with the temperature and an action line ("Clear vents, lift laptop",
+    "Plug in, power mode"). A computer with no temperature sensor says "no
+    temp sensor" instead of claiming the CPU is not hot.
+  * A proper start-up state. For the first ~10 seconds the icon is grey
+    and the tooltip says "Starting up", instead of briefly reading "Idle"
+    under load.
+  * Details has a "Why not 100%?" note and shows the rated clock the
+    percentage is taken from.
 
 
 MOVING TO ANOTHER COMPUTER
 
 Copy the whole HeatTray folder anywhere and run dist\HeatTray.exe. There is
-nothing else to install. Do not copy baseline.ini to a different machine;
-calibrate on each one.
+nothing else to install.
 
 Right-click the tray icon and choose About HeatTray... for version and
 contact details.

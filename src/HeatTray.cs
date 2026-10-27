@@ -10,7 +10,7 @@ using System.Text;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-// Embedded VERSIONINFO (Explorer's Properties â†’ Details). Kept in this file
+// Embedded VERSIONINFO (Explorer's Properties > Details). Kept in this file
 // so the single-source-file build stays true; versions derive from the same
 // Version const that -v and the About dialog show.
 [assembly: AssemblyTitle("HeatTray")]
@@ -62,17 +62,19 @@ internal static class HeatTray
     private const ushort VK_RETURN = 0x0D;
     private const uint FILE_TYPE_CHAR = 2;
 
-    internal const string Version = "1.3";
-    private const string VersionDate = "2026-10-12";
+    internal const string Version = "2.0";
+    private const string VersionDate = "2026-10-28";
     private const string Author = "Andrew Reardon";
     private const string AuthorEmail = "andrewreardon@gmail.com";
 
     // ---- Tunables (settings.ini / command line) ----
     private static int IntervalMs = 2000;
-    private static double WarnC = 85;      // temp >= this: amber
+    private static double WarnC = 85;      // temp >= this counts as hot: changes the hint, and an idle CPU this hot shows HOT
     private static double GateUtil = 30;   // CPU load % below which we call it "idle" and don't judge speed
-    private static double AmberPct = 85;   // speed (% of the calibrated reference) below this: amber
-    private static double RedPct = 70;     // ... below this: red
+    private static double AmberPct = 70;   // loaded speed (% of the rated clock) below this: amber
+    private static double RedPct = 40;     // ... below this: red
+    // Test seam (hidden, not in -h): scales the perf counter so an idle machine can be staged in a slow state.
+    private static double PerfScale = 1.0;
     private const int ShowPercent = 0, ShowGhz = 1, ShowBoth = 2;
     private static int IconShows = ShowPercent;   // what the icon says: speed %, GHz, or both (two lines)
 
@@ -82,10 +84,8 @@ internal static class HeatTray
     private static bool _anyCli;
 
     private const int SmoothN = 5;         // samples averaged before judging (10s at the default 2s interval)
-    private const int CalSeconds = 300;       // calibration window
 
     private static string ConfigPath;
-    private static string BaselinePath;
 
     private static NotifyIcon _notifyIcon;
     private static Icon _currentIcon;
@@ -103,8 +103,8 @@ internal static class HeatTray
     private static readonly Queue<double> _utilRing = new Queue<double>();
     private static double _lastPerf, _lastUtil, _lastTempC = double.NaN;
     private static double _smoothPerf, _smoothUtil;
-    private static double _speedPct = -1;          // -1 = not judged (idle / no data)
-    private static bool _calibrated;              // speed is being judged against the reference
+    private static double _speedPct = -1;          // busy-core speed (% of rated) while loaded; -1 = idle / no data
+    private static bool _ready;                   // the smoothing window is full (otherwise the app is still starting up)
     private static bool _loaded;                  // CPU load is above the idle gate
     // Smoothed busy-core speed (% of rated) for recent loaded samples, to show a trend.
     private static readonly Queue<double> _trendRing = new Queue<double>();
@@ -118,20 +118,6 @@ internal static class HeatTray
     private const int HeatMemorySec = 120;
     private static readonly Queue<KeyValuePair<DateTime, double>> _tempRing = new Queue<KeyValuePair<DateTime, double>>();
 
-    // The reference: busy-core speed (% of rated) of the user's own demo load,
-    // measured once while the machine was cool (see StartCalibration).
-    private static double _refPct;                // 0 = none yet
-    private static string _refDate = "";
-    private static double _refMaxTemp = double.NaN;
-    private static int _refSamples;
-    private static string _lastCalResult = "";    // last calibration outcome (balloons can be suppressed by Focus Assist)
-
-    // Calibration in progress
-    private static bool _calActive;
-    private static DateTime _calStart;
-    private static readonly List<double> _calSamples = new List<double>();
-    private static double _calMaxTemp = double.NaN;
-
     [STAThread]
     private static void Main(string[] args)
     {
@@ -142,7 +128,6 @@ internal static class HeatTray
         }
 
         ConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.ini");
-        BaselinePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "baseline.ini");
 
         if (!_anyCli)
         {
@@ -168,7 +153,6 @@ internal static class HeatTray
             return;
         }
 
-        LoadBaseline();
         Application.EnableVisualStyles();
 
         var menu = new ContextMenuStrip();
@@ -176,9 +160,6 @@ internal static class HeatTray
         detailsItem.Click += (s, e) => ShowDetailsDialog();
         var settingsItem = menu.Items.Add("Settings...");
         settingsItem.Click += (s, e) => ShowSettingsDialog();
-        var calItem = menu.Items.Add("Calibrate to demo load (5 min)...");
-        calItem.Click += (s, e) => StartCalibration();
-        menu.Opening += (s, e) => { calItem.Text = _calActive ? "Cancel calibration" : "Calibrate to demo load (5 min)..."; };
         var aboutItem = menu.Items.Add("About HeatTray...");
         aboutItem.Click += (s, e) => ShowAboutDialog();
         menu.Items.Add(new ToolStripSeparator());
@@ -281,7 +262,7 @@ internal static class HeatTray
         catch { }
     }
 
-    // Hottest thermal zone in Â°C, or NaN. The counter reports Kelvin.
+    // Hottest thermal zone in deg C, or NaN. The counter reports Kelvin.
     private static double ReadTempC()
     {
         double best = double.NaN;
@@ -309,14 +290,14 @@ internal static class HeatTray
     {
         if (_cPerf == null || _cUtil == null)
         {
-            SetTooltip("HeatTray: no CPU counters\nrun HeatTray.exe --diag");
+            SetTooltip("Cannot read speed\nClick for how to fix");
             ApplyIcon("?", null, Tone.Neutral, Tone.Neutral);
             return;
         }
 
         try
         {
-            _lastPerf = _cPerf.NextValue();
+            _lastPerf = _cPerf.NextValue() * PerfScale;
             _lastUtil = _cUtil.NextValue();
         }
         catch
@@ -340,24 +321,11 @@ internal static class HeatTray
         bool ringFull = _perfRing.Count >= SmoothN;
         bool loaded = ringFull && _smoothUtil >= GateUtil && _smoothPerf > 0;
 
+        _ready = ringFull;
         _loaded = loaded;
-        _speedPct = -1;
-        _calibrated = false;
-
-        if (_calActive && !double.IsNaN(_lastTempC) && (double.IsNaN(_calMaxTemp) || _lastTempC > _calMaxTemp))
-        {
-            _calMaxTemp = _lastTempC;
-        }
-
-        if (loaded)
-        {
-            if (_calActive) _calSamples.Add(_smoothPerf);
-            if (_refPct > 0)
-            {
-                _speedPct = _smoothPerf / _refPct * 100.0;   // not capped: above 100 = faster than the calibration run
-                _calibrated = true;
-            }
-        }
+        // Busy-core speed as a % of the rated clock (the counter is already that), judged only under
+        // load: an idle CPU chooses its own speed, so there is nothing to compare. Not capped: above 100 is boost.
+        _speedPct = loaded ? _smoothPerf : -1;
 
         // Only fully-loaded smoothing windows feed the trend: the ramp up from idle
         // averages idle readings in and showed a fake "rising" (+479%).
@@ -371,11 +339,6 @@ internal static class HeatTray
         else if (!loaded)
         {
             _trendRing.Clear();   // idle gaps would pollute the trend
-        }
-
-        if (_calActive && (DateTime.Now - _calStart).TotalSeconds >= CalSeconds)
-        {
-            FinishCalibration();
         }
 
         Render();
@@ -434,17 +397,18 @@ internal static class HeatTray
     }
 
     // Cause hint for a slow reading when the temperature is t (NaN = unknown).
-    // Slow + hot -> cooling; slow + cool -> power mode / AC / firmware cap.
+    // Slow + hot -> cooling; slow + cool -> power mode / AC / firmware cap; no sensor -> unknown.
     private static string HintFor(double t)
     {
-        if (double.IsNaN(t) || t < WarnC - 5) return "Check power mode";
+        if (double.IsNaN(t)) return "Cause unknown";
+        if (t < WarnC - 5) return "Check power mode";
         return t >= WarnC ? "Check cooling" : "Heat or power cap";
     }
 
-    // Short cause hint; null when speed isn't judged.
+    // Short cause hint; null when the speed isn't being judged (idle / starting).
     private static string AdviceShort()
     {
-        if (_speedPct < 0 || !_calibrated) return null;
+        if (_speedPct < 0) return null;
         if (_speedPct >= AmberPct) return "OK";
         return HintFor(HeatTempC());
     }
@@ -454,7 +418,7 @@ internal static class HeatTray
     private static string PeakNote()
     {
         double peak = HeatTempC();
-        if (_speedPct < 0 || !_calibrated || _speedPct >= AmberPct || double.IsNaN(peak) || HintFor(peak) == HintFor(_lastTempC)) return "";
+        if (_speedPct < 0 || _speedPct >= AmberPct || double.IsNaN(peak) || HintFor(peak) == HintFor(_lastTempC)) return "";
         return string.Format(" (peaked {0:0}C)", peak);
     }
 
@@ -465,12 +429,14 @@ internal static class HeatTray
         {
             case "OK":
                 return (!double.IsNaN(_lastTempC) && _lastTempC >= WarnC)
-                    ? "Hot, but still holding normal speed, so no action is needed."
-                    : "Running at normal speed. Carry on.";
+                    ? "Hot, but still running at a healthy speed, so no action is needed."
+                    : (_speedPct > 100 ? "Boosting above its rated speed. Carry on." : "Running at a healthy speed. Carry on.");
             case "Check cooling":
                 return eased
                     ? string.Format("Slow, and it was hot within the last 2 minutes (peak {0:0}C): a heat slowdown can outlast the heat. Act on cooling (airflow, dust, surface) or reduce the workload.", HeatTempC())
                     : "Slow AND hot: act on cooling (airflow, dust, surface) or reduce the workload.";
+            case "Cause unknown":
+                return "Slow, and this machine reports no temperature, so the cause is unknown. Check the power mode, AC power / charger wattage or a firmware power cap, and make sure the vents are clear.";
             case "Check power mode":
                 return "Slow but not hot, so this isn't heat. Check the power mode, AC power / charger wattage, or a firmware power cap.";
             case "Heat or power cap":
@@ -481,10 +447,10 @@ internal static class HeatTray
         return null;
     }
 
-    // Ready reckoner (all Intel, at the user's request, except the abacus): roughly which vintage of CPU the current speed feels like, if this
-    // machine's normal speed (the reference, 100%) is taken as a current laptop. Rough
-    // single-thread comparison, order of magnitude only: for fun, not a benchmark.
-    // Centres are % of normal; the nearest one (on a log scale) wins.
+    // Ready reckoner (all Intel, at the user's request, except the abacus): roughly which vintage of CPU the current speed feels like, if the
+    // rated speed (100%) is taken as a current laptop. Rough single-thread comparison, order of
+    // magnitude only: for fun, not a benchmark.
+    // Centres are % of rated; the nearest one (on a log scale) wins.
     private static readonly double[] ReckonPct = { 70, 55, 38, 27, 17, 11, 6.5, 3.5, 1.0, 0.45, 0.25, 0.04, 0.005 };
     private static readonly string[] ReckonName = {
         "a Core i5-4690", "a Core i5-2500K", "a Core 2 Duo E8400", "a Core 2 Duo E6600",
@@ -494,7 +460,7 @@ internal static class HeatTray
     private static readonly string[] ReckonYear = {
         "2014", "2011", "2008", "2006", "2002", "2001", "1999", "1998", "1996", "1993", "1992", "1985", "2400 BC" };
 
-    // Null at or above the amber threshold (nothing to joke about) or when not judged.
+    // Null at or above the amber threshold (nothing to joke about) or when not under load.
     private static string Reckoner(double pct)
     {
         if (pct < 0 || pct >= AmberPct) return null;
@@ -521,76 +487,111 @@ internal static class HeatTray
     private static void Render()
     {
         string tempText = double.IsNaN(_lastTempC) ? "no temp" : string.Format("{0:0}C", _lastTempC);
-        string loadText = string.Format("load {0:0}%", _smoothUtil);
+        string tempLoad = tempText + " | " + string.Format("load {0:0}%", _smoothUtil);
 
-        if (_calActive)
+        if (!_ready)
         {
-            int left = Math.Max(0, CalSeconds - (int)(DateTime.Now - _calStart).TotalSeconds);
-            string mmss = string.Format("{0}:{1:00}", left / 60, left % 60);
-            SetTooltip(string.Format("Calibrating {0} left\n{1} | {2}\n{3} readings", mmss, tempText, loadText, _calSamples.Count));
-            ApplyIcon("CAL", mmss, Tone.Cal, Tone.Cal);
+            // The smoothing window is not full yet: no verdict, just the live reading in grey.
+            SetTooltip("Starting up\nMeasuring CPU speed\nReady in seconds");
+            ApplyIcon(((int)Math.Round(Math.Min(_lastPerf, 999))).ToString(CultureInfo.InvariantCulture), null, Tone.Neutral, Tone.Neutral);
             return;
         }
 
-        // Judged = loaded and a reference exists: the speed is compared with the reference
-        // (the user's own demo load) and coloured green / orange / red. The same figure is
-        // shown while idle (see IconTone), so the icon stays steady instead of flipping to
-        // grey. With no reference there is nothing to compare with, so the raw busy-core
-        // speed as % of rated is shown (in grey) with a tag.
-        bool judged = _speedPct >= 0;
-        bool haveRef = _refPct > 0;
-        double vsRef = judged ? _speedPct : (haveRef ? _smoothPerf / _refPct * 100.0 : -1);
-        double shownPct = vsRef >= 0 ? vsRef : _smoothPerf;
-        int shown = (int)Math.Round(Math.Min(shownPct, 999));
+        // Speed is judged only under load: busy-core speed as a % of the rated clock, coloured
+        // green / orange / red. Idle, the cores choose their own speed (it can be well under or
+        // over the rated one), so the same figure is shown but there is nothing to judge: green,
+        // unless the CPU is hot even though it is idle.
+        int shown = (int)Math.Round(Math.Min(_smoothPerf, 999));
         double g = Ghz(_smoothPerf);
-
-        string tag;
+        string ghzText = double.IsNaN(g) ? "" : string.Format(" {0:0.0}GHz", g);
         string arrow = "";
-        if (judged)
+        if (_loaded && !double.IsNaN(TrendPct()))
         {
-            tag = AdviceShort() + PeakNote();
-            if (!double.IsNaN(TrendPct()))
-            {
-                int td = TrendDir();
-                arrow = td > 0 ? " \u25B2" : (td < 0 ? " \u25BC" : " \u25BA");
-            }
+            int td = TrendDir();
+            arrow = td > 0 ? " \u25B2" : (td < 0 ? " \u25BC" : " \u25BA");
+        }
+        bool hotIdle = !_loaded && !double.IsNaN(_lastTempC) && _lastTempC >= WarnC;
+
+        // Short lines, not one long one: the taskbar wraps long tray tooltips. Line 1 is always the speed.
+        string tip = string.Format("Speed {0}%{1}{2}\n", shown, ghzText, arrow);
+        if (!_loaded)
+        {
+            tip += hotIdle ? "Hot at light load\nClear vents, lift laptop\n" + tempLoad
+                           : "Light load: core speed is variable\n" + tempLoad;
+        }
+        else if (_speedPct >= AmberPct)
+        {
+            tip += (_speedPct > 100 ? "Boosting: faster than rated" : "Working hard, all fine") + "\n" + tempLoad;
         }
         else
         {
-            tag = (_loaded && _refPct <= 0) ? "Needs calibration" : "Idle";
+            string verdict, action;
+            SlowLines(out verdict, out action);
+            tip += verdict + "\n" + action;
+            string like = Reckoner(_speedPct);
+            if (like != null) tip += "\nLike " + like;
         }
-        string ghzText = double.IsNaN(g) ? "" : string.Format(" {0:0.0}GHz", g);
-        // Short lines, not one long one: the taskbar wraps long tray tooltips (the old
-        // one-liner, ~54 characters, wrapped at 125% scaling).
-        string tip = string.Format("Speed {0}%{1}{2}\n{3} | {4}\n{5}", shown, ghzText, arrow, tempText, loadText, tag);
-        string like = judged ? Reckoner(_speedPct) : null;
-        if (like != null) tip += "\nLike " + like;
         SetTooltip(tip);
 
         // Colour is about speed only (is heat actually slowing me down?); the temperature
         // is in the tooltip. Both lines share the colour so the icon reads as one signal.
-        Tone tone = IconTone(judged, haveRef, vsRef);
+        Tone tone = IconTone(_ready, _loaded, hotIdle, _speedPct);
         string top, bottom;
-        IconLines(IconShows, haveRef, shown.ToString(CultureInfo.InvariantCulture),
-            double.IsNaN(g) ? null : g.ToString("0.0", CultureInfo.InvariantCulture), out top, out bottom);
+        if (hotIdle)
+        {
+            top = "HOT"; bottom = null;   // a word, so amber cannot be read as a slow speed
+        }
+        else
+        {
+            IconLines(IconShows, shown.ToString(CultureInfo.InvariantCulture),
+                double.IsNaN(g) ? null : g.ToString("0.0", CultureInfo.InvariantCulture), out top, out bottom);
+        }
         ApplyIcon(top, bottom, tone, tone);
     }
 
-    // Colour of the icon. Under load: the speed verdict (green / orange / red). Idle: only
-    // green (speed at or above the orange threshold) or grey, because a CPU slows itself down
-    // on purpose when idle, so orange or red would be a false alarm. No reference: grey.
-    private static Tone IconTone(bool judged, bool haveRef, double vsRefPct)
+    // The verdict (tooltip line 2) and the action (line 3) for a loaded reading below the amber line.
+    private static void SlowLines(out string verdict, out string action)
     {
-        if (judged) return vsRefPct < RedPct ? Tone.Bad : (vsRefPct < AmberPct ? Tone.Warn : Tone.Good);
-        return (haveRef && vsRefPct >= AmberPct) ? Tone.Good : Tone.Neutral;
+        bool red = _speedPct < RedPct;
+        double now = _lastTempC, peak = HeatTempC();
+        string hint = HintFor(peak);
+        string slower = red ? "Far slower" : "Slower";
+        if (hint == "Cause unknown")
+        {
+            verdict = slower + ", no temp sensor";
+            action = "Try power mode, vents";
+            return;
+        }
+        bool hot = hint == "Check cooling";
+        action = hint == "Check power mode" ? "Plug in, power mode" : (hot ? "Clear vents, lift laptop" : "Cooling or power mode?");
+        if (PeakNote().Length > 0)
+        {
+            // The heat has already eased but the slowdown outlasts it.
+            string what = hot ? (red ? "Too hot" : "Hot") : slower;
+            verdict = double.IsNaN(now) ? string.Format("{0} (peak {1:0}C)", what, peak)
+                                        : string.Format("{0} (now {1:0}C, peak {2:0}C)", what, now, peak);
+            return;
+        }
+        string temp = string.Format(" ({0:0}C)", peak);
+        verdict = hot ? (red ? "Too hot, very slow" : "Slower, and hot") + temp
+                      : (hint == "Check power mode" ? slower + ", not hot" : slower + ", warm") + temp;
+    }
+
+    // Colour of the icon. Starting (no full window yet): neutral. Idle: green, or amber when the CPU
+    // is hot while idle. Under load: the speed verdict (green / orange / red).
+    private static Tone IconTone(bool ready, bool loaded, bool hotIdle, double speedPct)
+    {
+        if (!ready) return Tone.Neutral;
+        if (!loaded) return hotIdle ? Tone.Warn : Tone.Good;
+        return speedPct < RedPct ? Tone.Bad : (speedPct < AmberPct ? Tone.Warn : Tone.Good);
     }
 
     // The icon's one or two lines for the chosen display; bottom is null for a single big
-    // number. With no reference there is no percentage to show, so it is the GHz on its own.
-    private static void IconLines(int show, bool haveRef, string pctText, string ghzText, out string top, out string bottom)
+    // number. With no rated clock there is no GHz, so it falls back to the percent.
+    private static void IconLines(int show, string pctText, string ghzText, out string top, out string bottom)
     {
         bottom = null;
-        if (ghzText != null && (!haveRef || show == ShowGhz)) { top = ghzText; return; }
+        if (ghzText != null && show == ShowGhz) { top = ghzText; return; }
         top = pctText;
         if (ghzText != null && show == ShowBoth) bottom = ghzText;
     }
@@ -610,133 +611,6 @@ internal static class HeatTray
             case "both": return ShowBoth;
         }
         return -1;
-    }
-
-    // ------------------------------------------------------------------
-    // Reference: calibration + persistence
-    // ------------------------------------------------------------------
-
-    private static void StartCalibration()
-    {
-        if (_cPerf == null || _cUtil == null) return;   // no counters: nothing to calibrate
-        if (_calActive)
-        {
-            _calActive = false;      // menu item reads "Cancel calibration" while active
-            _calSamples.Clear();
-            Render();
-            return;
-        }
-        var r = MessageBox.Show(
-            "Calibrate to your demo load\n\n" +
-            "1. Let the laptop cool (idle, on a desk).\n" +
-            "2. Start your full demo load.\n" +
-            "3. Click OK.\n\n" +
-            "HeatTray then watches for 5 minutes (readings count while CPU load is above " + GateUtil.ToString("0") +
-            "%) and stores that speed as your reference. Keep the load running until the icon stops showing CAL.",
-            "HeatTray", MessageBoxButtons.OKCancel, MessageBoxIcon.None);
-        if (r != DialogResult.OK) return;
-        _calActive = true;
-        _calStart = DateTime.Now;
-        _calSamples.Clear();
-        _calMaxTemp = double.NaN;
-        Render();
-    }
-
-    private static void FinishCalibration()
-    {
-        _calActive = false;
-        int n = _calSamples.Count;
-        // ~40% of the readings a full window would hold at the current interval.
-        int need = Math.Max(10, (int)(CalSeconds * 1000L / IntervalMs * 0.4));
-        if (n < need)
-        {
-            _calSamples.Clear();
-            _lastCalResult = string.Format("{0}: failed. Only {1} loaded readings (need {2}).", DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture), n, need);
-            _notifyIcon.ShowBalloonTip(8000, "HeatTray calibration failed",
-                string.Format("Only {0} loaded readings in 5 minutes (need {1}). Start the demo load first, then calibrate again.", n, need),
-                ToolTipIcon.None);
-            return;
-        }
-        // Reference = median of the LAST 40% of the window (the settled speed). A cool
-        // start usually boosts / draws extra power for the first minutes, which is
-        // not what the demo sustains; judging against it would sit permanently amber.
-        double[] all = _calSamples.ToArray();
-        _calSamples.Clear();
-        int tailStart = (int)(n * 0.6);
-        double[] tail = new double[n - tailStart];
-        Array.Copy(all, tailStart, tail, 0, tail.Length);
-        double firstAvg = 0;
-        int firstN = Math.Max(1, n / 5);
-        for (int i = 0; i < firstN; i++) firstAvg += all[i];
-        firstAvg /= firstN;
-        Array.Sort(tail);
-        _refPct = tail[tail.Length / 2];
-        _refDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
-        _refMaxTemp = _calMaxTemp;
-        _refSamples = n;
-        SaveBaseline();
-
-        double g = Ghz(_refPct);
-        string msg = string.Format("Reference set: {0:0}% of rated{1} (settled speed over the last 2 min; first minute averaged {2:0}%).",
-            _refPct, double.IsNaN(g) ? "" : string.Format(" (~{0:0.0} GHz)", g), firstAvg);
-        if (!double.IsNaN(_refMaxTemp) && _refMaxTemp >= WarnC)
-        {
-            msg += string.Format(" It reached {0:0} C during calibration, so the reference may be low. Let it cool and run it again.", _refMaxTemp);
-        }
-        _lastCalResult = DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + ": " + msg;
-        _notifyIcon.ShowBalloonTip(10000, "HeatTray calibrated", msg, ToolTipIcon.None);
-    }
-
-    private static void LoadBaseline()
-    {
-        try
-        {
-            if (!File.Exists(BaselinePath)) return;
-            int version = 0, samples = 0;
-            double r = 0, maxTemp = double.NaN;
-            string date = "";
-            foreach (string rawLine in File.ReadAllLines(BaselinePath))
-            {
-                string line = rawLine.Trim();
-                if (line.Length == 0 || line.StartsWith("#")) continue;
-                int idx = line.IndexOf('=');
-                if (idx < 0) continue;
-                string key = line.Substring(0, idx).Trim().ToLowerInvariant();
-                string val = line.Substring(idx + 1).Trim();
-                if (key == "version") int.TryParse(val, out version);
-                else if (key == "ref") double.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out r);
-                else if (key == "maxtemp") double.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out maxTemp);
-                else if (key == "samples") int.TryParse(val, out samples);
-                else if (key == "date") date = val;
-            }
-            // Older formats (v1 best-ever, v2 per-band histograms) don't carry a reference.
-            if (version == 3 && r >= 10 && r <= 400)
-            {
-                _refPct = r;
-                _refDate = date.Length > 40 ? date.Substring(0, 40) : date;
-                _refMaxTemp = maxTemp;
-                _refSamples = samples;
-            }
-        }
-        catch { }
-    }
-
-    private static void SaveBaseline()
-    {
-        try
-        {
-            if (_refPct <= 0) return;
-            var lines = new List<string>();
-            lines.Add("# HeatTray reference: busy-core speed (% of rated) of your demo load, measured while calibrating.");
-            lines.Add("# Delete this file to forget it (calibrate again from the tray menu).");
-            lines.Add("version=3");
-            lines.Add(string.Format(CultureInfo.InvariantCulture, "ref={0:0.0}", _refPct));
-            lines.Add("date=" + _refDate);
-            if (!double.IsNaN(_refMaxTemp)) lines.Add(string.Format(CultureInfo.InvariantCulture, "maxtemp={0:0.0}", _refMaxTemp));
-            lines.Add("samples=" + _refSamples.ToString(CultureInfo.InvariantCulture));
-            File.WriteAllLines(BaselinePath, lines.ToArray());
-        }
-        catch { }
     }
 
     // ------------------------------------------------------------------
@@ -846,6 +720,11 @@ internal static class HeatTray
                 int s = ParseShow(val);
                 if (s >= 0) { IconShows = s; _anyCli = true; }
             }
+            else if (MatchOpt(args, ref i, null, "perfscale", out val))
+            {
+                // hidden test seam: no _anyCli, so it does not change which settings are loaded
+                if (TryNum(val, 0.01, 3, out d)) PerfScale = d;
+            }
         }
         return true;
     }
@@ -857,10 +736,10 @@ internal static class HeatTray
                "Usage: HeatTray.exe [options]\r\n" +
                "\r\n" +
                "  -i <sec>,  --interval=<sec>  seconds between samples (default 2)\r\n" +
-               "  --warn=<C>                   temperature that counts as hot, for the hint (default 85)\r\n" +
+               "  --warn=<C>                   temperature that counts as hot, for the hint and the idle HOT warning (default 85)\r\n" +
                "  --gate=<pct>                 CPU load % below which it counts as idle (default 30)\r\n" +
-               "  --amber=<pct>                amber when speed is below this % of reference (default 85)\r\n" +
-               "  --red=<pct>                  red when speed is below this % of reference (default 70)\r\n" +
+               "  --amber=<pct>                amber when speed is below this % of rated (default 70)\r\n" +
+               "  --red=<pct>                  red when speed is below this % of rated (default 40)\r\n" +
                "  --show=<percent|ghz|both>    what the icon shows (default percent)\r\n" +
                "  --diag                       print counter availability + 5 live samples, then exit\r\n" +
                "  -h, --help                   show this help and exit\r\n" +
@@ -1082,7 +961,7 @@ internal static class HeatTray
         sb.AppendLine("NOW");
         if (_cPerf == null || _cUtil == null)
         {
-            Row(sb, "", "CPU counters unavailable. Run HeatTray.exe --diag from a terminal.");
+            Row(sb, "Status:", "HeatTray cannot read the CPU speed from Windows. This usually means the performance counters are switched off or Windows is not set to English. Run HeatTray.exe --diag from a terminal to see which counter is missing.");
         }
         else
         {
@@ -1096,12 +975,13 @@ internal static class HeatTray
                     peakT - _lastTempC >= 1 ? string.Format(" (hottest in the last 2 minutes: {0:0} C)", peakT) : ""));
             if (_speedPct >= 0)
             {
-                Row(sb, "Speed vs reference:", string.Format("{0:0}%", _speedPct));
-                Row(sb, "Estimated slowdown:", string.Format("~{0:0}%", Math.Max(0, 100 - _speedPct)));
+                Row(sb, "Verdict:", string.Format("{0}: {1:0}% of rated speed",
+                    _speedPct < RedPct ? "Red" : (_speedPct < AmberPct ? "Amber" : "Green"), _speedPct));
+                Row(sb, "Below rated speed:", string.Format("~{0:0}%", Math.Max(0, 100 - _speedPct)));
                 string like = Reckoner(_speedPct);
                 Row(sb, "Feels like:", like == null
                     ? "as intended."
-                    : string.Format("{0} (~{1:0.#}x slower than normal)", like, 100 / Math.Max(_speedPct, 1)));
+                    : string.Format("{0} (~{1:0.#}x slower than rated)", like, 100 / Math.Max(_speedPct, 1)));
                 double tp = TrendPct();
                 if (double.IsNaN(tp))
                 {
@@ -1117,55 +997,45 @@ internal static class HeatTray
                 string adv = AdviceLong();
                 if (adv != null) Row(sb, "Advice:", adv);
             }
-            else if (_calActive)
+            else if (_ready)
             {
-                Row(sb, "Status:", "Calibrating: keep the demo load running until the icon stops showing CAL.");
-            }
-            else if (_loaded)
-            {
-                Row(sb, "Status:", "Under load but no reference yet: right-click the icon > Calibrate to demo load...");
-            }
-            else if (_refPct > 0)
-            {
-                Row(sb, "Speed vs reference:", string.Format("{0:0}% (idle, so no verdict)", _smoothPerf / _refPct * 100.0));
-                Row(sb, "Status:", string.Format("Idle (load below {0:0}%). A CPU slows itself down when idle, so a low speed is normal: the icon stays green while the speed is at least {1:0}% of your reference, goes grey below that, and is never orange or red.", GateUtil, AmberPct));
+                if (!double.IsNaN(_lastTempC) && _lastTempC >= WarnC)
+                {
+                    Row(sb, "Status:", string.Format("Hot at light load ({0:0} C). Something is trapping heat: lift the laptop onto a hard, flat surface and clear the vents. The icon shows HOT in amber.", _lastTempC));
+                }
+                else
+                {
+                    Row(sb, "Status:", string.Format("Light load (below {0:0}% CPU load, so speed is not checked). With little to do, core speed varies on its own to save power, so the figure can be well below or above the rated speed and says little about heat. The icon stays green, and shows HOT in amber if the CPU is {1:0} C or more while idle.", GateUtil, WarnC));
+                }
             }
             else
             {
-                Row(sb, "Status:", "Idle (load below " + GateUtil.ToString("0") + "%), and no reference yet: right-click the icon > Calibrate to demo load...");
+                Row(sb, "Status:", string.Format("Starting up: needs about {0:0} seconds of readings before it can show a verdict.", SmoothN * IntervalMs / 1000.0));
             }
         }
         sb.AppendLine();
-        sb.AppendLine("REFERENCE (your demo load, measured while cool)");
-        if (_refPct > 0)
-        {
-            double rg = Ghz(_refPct);
-            Row(sb, "Speed:", string.Format("{0:0}% of rated{1}", _refPct,
-                double.IsNaN(rg) ? "" : string.Format(" (~{0:0.0} GHz)", rg)));
-            Row(sb, "Set:", _refDate);
-            Row(sb, "From:", string.Format("{0} readings{1}", _refSamples,
-                double.IsNaN(_refMaxTemp) ? "" : string.Format(", peak temperature {0:0} C", _refMaxTemp)));
-        }
-        else
-        {
-            Row(sb, "", "none yet: right-click the icon > Calibrate to demo load...");
-        }
-        if (_lastCalResult.Length > 0) Row(sb, "Last calibration:", _lastCalResult);
+        sb.AppendLine("RATED SPEED");
+        Row(sb, "Rated clock:", _ratedMhz > 0
+            ? string.Format("{0:0.00} GHz ({1:0} MHz), about the speed Windows shows in This PC > Properties. 100% means the busy cores run at that clock.", _ratedMhz / 1000.0, _ratedMhz)
+            : "not reported by this machine, so GHz is not shown. The percentages still work.");
         sb.AppendLine();
         sb.AppendLine("THRESHOLDS (the icon colour follows speed only)");
-        Row(sb, "Amber:", string.Format("speed below {0:0}% of reference", AmberPct));
-        Row(sb, "Red:", string.Format("speed below {0:0}% of reference", RedPct));
+        Row(sb, "Green:", string.Format("light load, or working at {0:0}% of rated speed or more (above 100% is boost)", AmberPct));
+        Row(sb, "Amber:", string.Format("under load, below {0:0}% of rated speed", AmberPct));
+        Row(sb, "Red:", string.Format("under load, below {0:0}% of rated speed", RedPct));
+        Row(sb, "HOT:", string.Format("amber word on the icon when the CPU is {0:0} C or more at light load", WarnC));
         sb.AppendLine();
         sb.AppendLine("HOW TO READ IT");
         Row(sb, "Speed near 100%:", "ignore the temperature, carry on.");
         Row(sb, string.Format("Slow, >= {0:0} C:", WarnC), "act on cooling or reduce the workload.");
         Row(sb, string.Format("Slow, < {0:0} C:", WarnC - 5), "not heat: check the power mode / AC power.");
+        Row(sb, "No sensor:", "if this machine reports no temperature, a slow reading says the cause is unknown: check the power mode, the charger and the vents.");
         Row(sb, "Hints use:", "the hottest temperature of the last 2 minutes, not just now: a heat slowdown can outlast the heat.");
-        Row(sb, "Icon:", "your speed as a % of your normal (100 = as fast as your calibration run, more = faster), or GHz, or both: choose in Settings. Grey = no verdict: not calibrated yet (it then shows GHz), or idle with a low speed.");
+        Row(sb, "Icon:", "your busy-core speed as a % of the CPU's rated clock, or GHz, or both: choose in Settings. Grey only while HeatTray is starting.");
         Row(sb, "Trend:", "the arrow in the tooltip and the Trend line above.");
-        Row(sb, "Feels like:", "a tongue-in-cheek comparison of how your laptop is running right now with an old computer (your normal speed counts as a current laptop). Order of magnitude only, not a benchmark.");
+        Row(sb, "Feels like:", "a tongue-in-cheek comparison of how your laptop is running right now with an old computer (100% of rated speed counts as a current laptop). Order of magnitude only, not a benchmark.");
         sb.AppendLine();
-        Para(sb, "The reference is the median busy-core speed over the last 2 minutes of a 5-minute calibration run (the settled speed, not the initial boost). Calibrate again after changing the hardware, power mode or what your demo load does.");
+        Para(sb, "Why not 100%? The rated clock is the CPU's base speed. A busy laptop often sits a little under it (power limits, battery, heat), a lightly loaded one often boosts above it, and an idle one chooses its own speed. Only a big shortfall under load means something is holding it back.");
         return sb.ToString().Replace("\r\n", "\n").Replace("\n", "\r\n");
     }
 
@@ -1247,6 +1117,8 @@ internal static class HeatTray
         {
             if (!File.Exists(ConfigPath)) return;
 
+            bool sawAmber = false, sawRed = false;
+            int fileVersion = 0;   // v1.x files have no v= line
             foreach (string rawLine in File.ReadAllLines(ConfigPath))
             {
                 string line = rawLine.Trim();
@@ -1259,13 +1131,19 @@ internal static class HeatTray
                 string value = line.Substring(idx + 1).Trim();
                 double d;
 
-                if (key == "show") { int s = ParseShow(value); if (s >= 0) IconShows = s; }
+                if (key == "v") { int.TryParse(value, out fileVersion); }
+                else if (key == "show") { int s = ParseShow(value); if (s >= 0) IconShows = s; }
                 else if (key == "interval" && TryNum(value, 1, 60, out d)) IntervalMs = (int)(d * 1000);
                 else if (key == "warn" && TryNum(value, 30, 120, out d)) WarnC = d;
                 else if (key == "gate" && TryNum(value, 5, 80, out d)) GateUtil = d;
-                else if (key == "amber" && TryNum(value, 10, 100, out d)) AmberPct = d;
-                else if (key == "red" && TryNum(value, 10, 100, out d)) RedPct = d;
+                else if (key == "amber" && TryNum(value, 10, 100, out d)) { AmberPct = d; sawAmber = true; }
+                else if (key == "red" && TryNum(value, 10, 100, out d)) { RedPct = d; sawRed = true; }
             }
+            // v1.x measured speed against a calibrated reference and saved 85 / 70 as its defaults. In a file
+            // without a v= line those two exact values mean "never changed": move them to the v2 defaults (the
+            // scale is now % of rated). Any other pair was a deliberate choice and is kept, and so is 85 / 70 in a
+            // v2 file (SaveSettings writes v=2), which someone chose on purpose.
+            if (fileVersion < 2 && sawAmber && sawRed && AmberPct == 85 && RedPct == 70) { AmberPct = 70; RedPct = 40; }
         }
         catch
         {
@@ -1279,6 +1157,7 @@ internal static class HeatTray
         {
             File.WriteAllLines(ConfigPath, new[]
             {
+                "v=2",
                 "interval=" + (IntervalMs / 1000),
                 "warn=" + WarnC.ToString(CultureInfo.InvariantCulture),
                 "gate=" + GateUtil.ToString(CultureInfo.InvariantCulture),
@@ -1324,14 +1203,14 @@ internal static class HeatTray
             var intervalBox = AddRow(form, "Sample every (sec):", (IntervalMs / 1000).ToString(CultureInfo.InvariantCulture), 47, "intervalBox");
             var warnBox = AddRow(form, "Count as hot at (C):", WarnC.ToString(CultureInfo.InvariantCulture), 79, "warnBox");
             var gateBox = AddRow(form, "Idle below CPU load (%):", GateUtil.ToString(CultureInfo.InvariantCulture), 111, "gateBox");
-            var amberBox = AddRow(form, "Amber below (% of reference):", AmberPct.ToString(CultureInfo.InvariantCulture), 143, "amberBox");
-            var redBox = AddRow(form, "Red below (% of reference):", RedPct.ToString(CultureInfo.InvariantCulture), 175, "redBox");
+            var amberBox = AddRow(form, "Amber below (% of rated):", AmberPct.ToString(CultureInfo.InvariantCulture), 143, "amberBox");
+            var redBox = AddRow(form, "Red below (% of rated):", RedPct.ToString(CultureInfo.InvariantCulture), 175, "redBox");
 
             // The hint, which turns into the message when OK finds something wrong (see FormClosing below).
             var hint = new Label
             {
                 Name = "hint",
-                Text = "The icon colour follows speed only. \"Hot\" just changes the hint: slow and hot says Check cooling, slow and cool says Check power mode.",
+                Text = "Green at light load or when healthy; amber or red only under load, below these % of the CPU's rated clock. \"Hot\" just changes the hint and the HOT warning.",
                 Left = 15, Top = 212, Width = 295, Height = 48, ForeColor = SystemColors.GrayText
             };
             form.Controls.Add(hint);
@@ -1427,7 +1306,7 @@ internal static class HeatTray
 
     // What a line of the icon is saying; each tone has a bright colour for a dark
     // taskbar and a darker one for a light taskbar (see ToneColor).
-    private enum Tone { Neutral, Good, Warn, Bad, Cal }
+    private enum Tone { Neutral, Good, Warn, Bad }
 
     private static Color ToneColor(Tone tone, bool light)
     {
@@ -1438,7 +1317,6 @@ internal static class HeatTray
             // Bad: pure Color.Red was only 3.9:1 on a maroon accent taskbar; this lighter red is 5.0:1
             // there (4.1 -> 5.2 on Windows dark grey) and still clearly red.
             case Tone.Bad: return light ? Color.FromArgb(200, 0, 0) : Color.FromArgb(255, 85, 85);
-            case Tone.Cal: return light ? Color.FromArgb(0, 120, 170) : Color.Cyan;
             default: return light ? Color.FromArgb(35, 35, 35) : Color.Gainsboro;
         }
     }
