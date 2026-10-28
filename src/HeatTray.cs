@@ -62,13 +62,13 @@ internal static class HeatTray
     private const ushort VK_RETURN = 0x0D;
     private const uint FILE_TYPE_CHAR = 2;
 
-    internal const string Version = "2.0";
+    internal const string Version = "2.1";
     private const string VersionDate = "2026-10-28";
     private const string Author = "Andrew Reardon";
     private const string AuthorEmail = "andrewreardon@gmail.com";
 
     // ---- Tunables (settings.ini / command line) ----
-    private static int IntervalMs = 2000;
+    private static int IntervalMs = 5000;
     private static double WarnC = 85;      // temp >= this counts as hot: changes the hint, and an idle CPU this hot shows HOT
     private static double GateUtil = 30;   // CPU load % below which we call it "idle" and don't judge speed
     private static double AmberPct = 70;   // loaded speed (% of the rated clock) below this: amber
@@ -83,7 +83,7 @@ internal static class HeatTray
     // persisted - only Settings-dialog edits write settings.ini.
     private static bool _anyCli;
 
-    private const int SmoothN = 5;         // samples averaged before judging (10s at the default 2s interval)
+    private const int SmoothN = 3;         // samples averaged before judging (15 s at the default 5 s interval)
 
     private static string ConfigPath;
 
@@ -108,9 +108,9 @@ internal static class HeatTray
     private static bool _loaded;                  // CPU load is above the idle gate
     // Smoothed busy-core speed (% of rated) for recent loaded samples, to show a trend.
     private static readonly Queue<double> _trendRing = new Queue<double>();
-    private const int TrendMax = 150;     // ~5 min at the default 2 s interval
-    private const int TrendEnds = 15;     // compare the newest vs oldest ~30 s of the window
-    private const int TrendMin = 60;      // need ~2 min of loaded history before showing a trend
+    private const int TrendMax = 60;      // ~5 min at the default 5 s interval
+    private const int TrendEnds = 6;      // compare the newest vs oldest ~30 s of the window
+    private const int TrendMin = 24;      // need ~2 min of loaded history before showing a trend
 
     // Recent temperature readings (UTC time, deg C), so the hint can look back and not
     // only at now: a firmware thermal clamp can hold the CPU slow for 30-40 s after
@@ -503,7 +503,7 @@ internal static class HeatTray
         // unless the CPU is hot even though it is idle.
         int shown = (int)Math.Round(Math.Min(_smoothPerf, 999));
         double g = Ghz(_smoothPerf);
-        string ghzText = double.IsNaN(g) ? "" : string.Format(" {0:0.0}GHz", g);
+        string ghzText = double.IsNaN(g) ? "" : string.Format(" {0:0.0}GHz of {1:0.0}GHz", g, _ratedMhz / 1000.0);
         string arrow = "";
         if (_loaded && !double.IsNaN(TrendPct()))
         {
@@ -735,7 +735,7 @@ internal static class HeatTray
                "\r\n" +
                "Usage: HeatTray.exe [options]\r\n" +
                "\r\n" +
-               "  -i <sec>,  --interval=<sec>  seconds between samples (default 2)\r\n" +
+               "  -i <sec>,  --interval=<sec>  seconds between samples (default 5)\r\n" +
                "  --warn=<C>                   temperature that counts as hot, for the hint and the idle HOT warning (default 85)\r\n" +
                "  --gate=<pct>                 CPU load % below which it counts as idle (default 30)\r\n" +
                "  --amber=<pct>                amber when speed is below this % of rated (default 70)\r\n" +
@@ -1386,24 +1386,28 @@ internal static class HeatTray
         }
     }
 
-    // Digits are never stretched taller than 1 / MinSqueeze of their natural shape (60% looked
-    // elongated); InkGap is the space between characters, in the 100-unit em they are laid out in.
+    // Digits are never stretched taller than 1 / MinSqueeze of their natural shape; InkGap is the
+    // space between characters, in the 100-unit em they are laid out in.
     private const float MinSqueeze = 0.85f;
     private const float InkGap = 9f;
 
     // The text as one outline path. Each character is placed by its ink, not by its advance
-    // width, so a narrow "1" takes little room and "119" needs far less squeezing to fit.
+    // width, so a narrow "1" takes little room and "111" needs far less squeezing to fit.
     private static System.Drawing.Drawing2D.GraphicsPath TightText(string text)
     {
         var path = new System.Drawing.Drawing2D.GraphicsPath();
-        using (var family = new FontFamily("Segoe UI"))
+        FontStyle style = FontStyle.Regular;
+        FontFamily family;
+        try { family = new FontFamily("Segoe UI Semibold"); }
+        catch (ArgumentException) { family = new FontFamily("Segoe UI"); style = FontStyle.Bold; }
+        using (family)
         {
             float x = 0;
             foreach (char ch in text)
             {
                 using (var glyph = new System.Drawing.Drawing2D.GraphicsPath())
                 {
-                    glyph.AddString(ch.ToString(), family, (int)FontStyle.Bold, 100f, new PointF(0, 0), StringFormat.GenericTypographic);
+                    glyph.AddString(ch.ToString(), family, (int)style, 100f, new PointF(0, 0), StringFormat.GenericTypographic);
                     RectangleF cb = glyph.GetBounds();
                     if (cb.Width <= 0) continue;
                     using (var m = new System.Drawing.Drawing2D.Matrix())
@@ -1419,31 +1423,43 @@ internal static class HeatTray
         return path;
     }
 
-    // Draws text as an outline path scaled to fill the box (digits as tall as
-    // the box allows), with a thin halo so it reads on any taskbar.
+    // Draws text as an outline path scaled to fill the box (digits as tall as the box allows),
+    // with a thin halo (none if the halo colour is transparent) so it reads on any taskbar.
     private static void DrawFit(Graphics g, string text, Color color, Color halo, RectangleF box)
     {
         using (var path = TightText(text))
         {
             RectangleF b = path.GetBounds();
             if (b.Width <= 0 || b.Height <= 0) return;
+            // Two digits (and "<1") all share the scale of "88", so 11 and 88 have the same height and stroke
+            // weight (fitted on their own, narrow numbers came out bigger and bolder). A wide pair
+            // (a 4 is wider than an 8) is squeezed by its own width rather than clipped. Anything
+            // else is fitted on its own bounds.
+            RectangleF r = b;
+            if (text.Length == 2 && (char.IsDigit(text[0]) || text[0] == '<') && char.IsDigit(text[1]))
+                using (var rp = TightText("88")) r = rp.GetBounds();
             // Fill the box height; if the text is too wide, squeeze it horizontally (never
             // below MinSqueeze) and only then shrink it.
-            float fitW = box.Width / b.Width, fitH = box.Height / b.Height;
+            float fitW = box.Width / r.Width, fitH = box.Height / r.Height;
             float sy = Math.Min(fitH, fitW / MinSqueeze);
-            float sx = Math.Min(sy, fitW);
+            float sx = Math.Min(Math.Min(sy, fitW), box.Width / b.Width);
             using (var m = new System.Drawing.Drawing2D.Matrix())
             {
                 m.Translate(box.X + box.Width / 2f, box.Y + box.Height / 2f);
                 m.Scale(sx, sy);
-                m.Translate(-(b.X + b.Width / 2f), -(b.Y + b.Height / 2f));
+                m.Translate(-(b.X + b.Width / 2f), -(r.Y + r.Height / 2f));
                 path.Transform(m);
             }
-            using (var pen = new Pen(halo, 2f))
+            if (halo.A > 0)
+            {
+                using (var pen = new Pen(halo, 2f))
+                {
+                    pen.LineJoin = System.Drawing.Drawing2D.LineJoin.Round;
+                    g.DrawPath(pen, path);
+                }
+            }
             using (var brush = new SolidBrush(color))
             {
-                pen.LineJoin = System.Drawing.Drawing2D.LineJoin.Round;
-                g.DrawPath(pen, path);
                 g.FillPath(brush, path);
             }
         }

@@ -1,6 +1,6 @@
 HEATTRAY
 
-v2.0 (2026-10-28)
+v2.1 (2026-10-28)
 Author: Andrew Reardon, andrewreardon@gmail.com
 
 Shows in the system tray, next to the clock, whether your CPU is really
@@ -46,7 +46,7 @@ GETTING STARTED
   1. Double-click HeatTray.exe (in the dist folder).
   2. Don't see it? Click the small ^ arrow near the clock to show hidden
      tray icons.
-  3. Give it about 10 seconds: the icon is grey while it takes its first
+  3. Give it about 15 seconds: the icon is grey while it takes its first
      readings.
   4. To close it, right-click the icon and choose Exit.
 
@@ -98,12 +98,12 @@ not temperature:
   Orange HOT    The load is light but the CPU is at 85 C or more. It is
                 a word, not a number, so it cannot be mistaken for a
                 slow reading.
-  Grey number   Starting up: the first readings take about 10 seconds
+  Grey number   Starting up: the first readings take about 15 seconds
   Grey ?        CPU counters not available (see TROUBLESHOOTING)
 
 The text colours follow the Windows taskbar theme: bright shades on a dark
 taskbar, darker shades on a light one. If you change the Windows theme the
-icon follows within a couple of seconds.
+icon follows within a few seconds.
 
 You can change what the icon shows: right-click the icon, choose
 Settings..., and pick "Icon shows": Percent (the default), GHz (the current
@@ -130,23 +130,25 @@ is what the orange and red thresholds look for.
 
 THE HOVER TEXT
 
-Hover over the icon for the details. Loaded and healthy:
+Hover over the icon for the details. The first line is the speed, then the
+current clock "of" the rated clock (3.3GHz here, the figure Windows shows
+in This PC > Properties). Loaded and healthy:
 
-  Speed 92% 3.0GHz
+  Speed 92% 3.0GHz of 3.3GHz
   Working hard, all fine
   68C | load 74%
 
 Slow and hot (the temperature moves into the second line, and the fourth
 line is the ready reckoner):
 
-  Speed 18% 0.6GHz v
+  Speed 18% 0.6GHz of 3.3GHz v
   Too hot (now 73C, peak 96C)
   Clear vents, lift laptop
   Like a Pentium 4 2.4GHz from 2002
 
 Light load:
 
-  Speed 110% 3.6GHz
+  Speed 110% 3.6GHz of 3.3GHz
   Light load: core speed is variable
   52C | load 8%
 
@@ -246,7 +248,7 @@ Details.
 
 COMMAND-LINE OPTIONS
 
-  -i <sec>, --interval=<sec>  seconds between samples (default 2)
+  -i <sec>, --interval=<sec>  seconds between samples (default 5)
   --warn=<C>                  temperature that counts as hot, for the
                               hints and the idle HOT warning (default 85)
   --gate=<pct>                CPU load below which it counts as idle
@@ -337,11 +339,23 @@ It reads three standard Windows performance counters:
     speed and would hide a hard throttle by making a busy CPU look idle).
   * Thermal Zone Information\Temperature: the hottest ACPI thermal zone.
 
-Readings are smoothed over the last 5 samples. Above the idle threshold
-(30% load) the speed is coloured green, orange or red by the thresholds.
-Below it the same percentage is shown in green, and never orange or red;
+Readings are smoothed over the last 3 samples (about 15 seconds). Above the
+idle threshold (30% load) the speed is coloured green, orange or red by
+the thresholds. Below it the same percentage is shown in green, and never
+orange or red;
 the one exception is HOT when the temperature is at or above the hot
 threshold.
+
+
+WHAT'S NEW IN v2.1
+
+  * The tooltip shows the rated clock. Line 1 now reads "Speed 61% 2.0GHz
+    of 3.3GHz": the current clock out of the CPU's rated one.
+  * Sampling every 5 seconds by default (was 2). The smoothing and the
+    trend windows were rescaled to match, so the colour reacts as fast as
+    before and the trend still looks back about 5 minutes.
+  * The icon digits match PingTray's: same font weight and the same size
+    for every two-digit number.
 
 
 WHAT'S NEW IN v2.0
@@ -363,7 +377,7 @@ WHAT'S NEW IN v2.0
     with the temperature and an action line ("Clear vents, lift laptop",
     "Plug in, power mode"). A computer with no temperature sensor says "no
     temp sensor" instead of claiming the CPU is not hot.
-  * A proper start-up state. For the first ~10 seconds the icon is grey
+  * A proper start-up state. For the first ~15 seconds the icon is grey
     and the tooltip says "Starting up", instead of briefly reading "Idle"
     under load.
   * Details has a "Why not 100%?" note and shows the rated clock the

@@ -1,6 +1,6 @@
 # HeatTray
 
-**v2.0** (2026-10-28) by Andrew Reardon, andrewreardon@gmail.com
+**v2.1** (2026-10-28) by Andrew Reardon, andrewreardon@gmail.com
 
 Shows in the system tray whether your CPU is actually running slower than it can, so you know when heat is genuinely costing you performance and when you can let it ride.
 
@@ -24,7 +24,7 @@ No installer: [download the latest release zip](https://github.com/andrewreardon
 
 1. Double-click `dist\HeatTray.exe`.
 2. Don't see the icon? Click the small **^** arrow near the clock to show hidden tray icons.
-3. Give it about 10 seconds: the icon is grey while it takes its first readings.
+3. Give it about 15 seconds: the icon is grey while it takes its first readings.
 4. To close it, right-click the icon > **Exit**.
 
 ![The right-click menu](screenshots/HeatTray-screenshot_menu.png)
@@ -59,10 +59,10 @@ The number is your CPU's busy-core speed as a % of its rated clock. 100 means th
 | 🟠 Orange | Noticeably slowed (under 70%) while the CPU is working. Settings and the command line call this colour amber |
 | 🔴 Red | Heavily slowed (under 40%) while the CPU is working |
 | 🟠 Orange `HOT` | The load is light but the CPU is at 85 °C or more. It is a word, not a number, so it can't be mistaken for a slow reading |
-| ⚪ Grey number | Starting up: the first readings take about 10 seconds |
+| ⚪ Grey number | Starting up: the first readings take about 15 seconds |
 | ⚪ Grey "?" | CPU counters unavailable: run `HeatTray.exe --diag` |
 
-The text colours follow the Windows taskbar theme: bright shades on a dark taskbar, darker shades on a light one (and the outline flips from dark to light). If you change the Windows theme the icon follows within a couple of seconds.
+The text colours follow the Windows taskbar theme: bright shades on a dark taskbar, darker shades on a light one (and the outline flips from dark to light). If you change the Windows theme the icon follows within a few seconds.
 
 You can change what the icon shows: **Settings > Icon shows** has **Percent** (the default), **GHz** (the current busy-core speed, e.g. `3.2`) or **Both** (percent over GHz on two lines, with smaller digits). The tooltip always has both. From the command line: `--show=percent|ghz|both`.
 
@@ -76,10 +76,10 @@ You can change what the icon shows: **Settings > Icon shows** has **Percent** (t
 
 Only a big shortfall **under load** means something is holding it back. That is what the orange and red thresholds look for.
 
-Hover over the icon for the full picture. Loaded and healthy:
+Hover over the icon for the full picture. The first line is the speed, then the current clock *of* the rated clock (3.3GHz here, the figure Windows shows in This PC > Properties). Loaded and healthy:
 
 ```
-Speed 92% 3.0GHz
+Speed 92% 3.0GHz of 3.3GHz
 Working hard, all fine
 68C | load 74%
 ```
@@ -87,7 +87,7 @@ Working hard, all fine
 Slow and hot (the temperature moves into the second line, and the fourth line is the [ready reckoner](#the-ready-reckoner)):
 
 ```
-Speed 18% 0.6GHz ▼
+Speed 18% 0.6GHz of 3.3GHz ▼
 Too hot (now 73C, peak 96C)
 Clear vents, lift laptop
 Like a Pentium 4 2.4GHz from 2002
@@ -96,7 +96,7 @@ Like a Pentium 4 2.4GHz from 2002
 Light load:
 
 ```
-Speed 110% 3.6GHz
+Speed 110% 3.6GHz of 3.3GHz
 Light load: core speed is variable
 52C | load 8%
 ```
@@ -165,7 +165,7 @@ Right-click the icon > **Settings...** (left-click opens **Details**) to change 
 ```
 HeatTray.exe [options]
 
-  -i <sec>, --interval=<sec>  seconds between samples (default 2)
+  -i <sec>, --interval=<sec>  seconds between samples (default 5)
   --warn=<C>                  temperature that counts as hot, for the hints and the
                               idle HOT warning (default 85)
   --gate=<pct>                CPU load % below which it counts as idle (default 30)
@@ -200,7 +200,13 @@ It reads three standard Windows performance counters:
 - `Processor Information\% Processor Time`: how busy the CPU is (deliberately *not* `% Processor Utility`, which is itself scaled by clock speed and would hide a hard throttle by making a busy CPU look idle).
 - `Thermal Zone Information\Temperature`: the hottest ACPI thermal zone.
 
-Readings are smoothed over the last 5 samples. Above the idle threshold (30% load) the speed is coloured green, orange or red by the thresholds. Below it the same percentage is shown in green, and never orange or red; the one exception is `HOT` when the temperature is at or above the hot threshold.
+Readings are smoothed over the last 3 samples (about 15 seconds). Above the idle threshold (30% load) the speed is coloured green, orange or red by the thresholds. Below it the same percentage is shown in green, and never orange or red; the one exception is `HOT` when the temperature is at or above the hot threshold.
+
+## What's new in v2.1
+
+- **The tooltip shows the rated clock.** Line 1 now reads `Speed 61% 2.0GHz of 3.3GHz`: the current clock out of the CPU's rated one.
+- **Sampling every 5 seconds by default** (was 2). The smoothing and the trend windows were rescaled to match, so the colour reacts as fast as before and the trend still looks back about 5 minutes.
+- **The icon digits match PingTray's**: same font weight and the same size for every two-digit number.
 
 ## What's new in v2.0
 
@@ -209,7 +215,7 @@ Readings are smoothed over the last 5 samples. Above the idle threshold (30% loa
 - **Light load looks reassuring.** The icon stays green while the load is under the idle threshold, and the tooltip says why the figure is not 100: *Light load: core speed is variable*. Values over 100 are shown as they are, with the tag *Boosting: faster than rated*.
 - **`HOT` at light load.** A lightly loaded CPU at 85 °C or more shows the word `HOT` in orange instead of a number.
 - **A tooltip that says what to do.** Slow readings now have a verdict line with the temperature and an action line (*Clear vents, lift laptop*, *Plug in, power mode*). A machine with no temperature sensor says *no temp sensor* instead of claiming the CPU is not hot.
-- **A proper start-up state.** For the first ~10 seconds the icon is grey and the tooltip says *Starting up*, instead of briefly reading *Idle* under load.
+- **A proper start-up state.** For the first ~15 seconds the icon is grey and the tooltip says *Starting up*, instead of briefly reading *Idle* under load.
 - Details has a **Why not 100%?** note and shows the rated clock the percentage is taken from.
 
 ## What's in this repo
@@ -234,7 +240,7 @@ csc.exe /nologo /target:winexe /platform:x64 /out:dist\HeatTray.exe /win32icon:s
 
 `csc.exe` is the one bundled with .NET Framework 4 (`C:\Windows\Microsoft.NET\Framework64\v4.0.30319`). Or just run `build.ps1`.
 
-SHA-256 of the committed `dist/HeatTray.exe` (v2.0): `0AF3A3165EA6C5A27FA017DDBD0275D798C8D8CEF2BAC91C2BE8F8DABD0256C0`
+SHA-256 of the committed `dist/HeatTray.exe` (v2.1): `6B91D8A352988CBE9E81B82FB0E3FB1E50B34AE432EC7D3AC10DFB27CB3CC8BD`
 
 ## License
 
