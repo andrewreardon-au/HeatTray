@@ -119,9 +119,9 @@ def tile(img, cx, cy, size):
 
 
 READ = {   # the tooltips the app prints (HeatTray.cs, Render/SlowLines), as captured on 28 Oct 2026
-    "g": ("86", GREEN, ["Speed 86% 2.8GHz of 3.3GHz", "Working hard, all fine", "59C | load 8%"]),
-    "o": ("59", ORANGE, ["Speed 59% 2.0GHz of 3.3GHz", "Slower, not hot (62C)", "Plug in, power mode", "Like a Core i5-2500K from 2011"]),
-    "r": ("27", RED, ["Speed 27% 0.9GHz of 3.3GHz", "Far slower, not hot (64C)", "Plug in, power mode", "Like a Core 2 Duo E6600 from 2006"]),
+    "g": ("86", GREEN, ["Speed 86% 2.8GHz of 3.3GHz", "Working hard, all fine", "61C | load 8%"]),
+    "o": ("59", ORANGE, ["Speed 59% 1.9GHz of 3.3GHz", "Slower, not hot (63C)", "Plug in, power mode", "Like a Core i5-2500K from 2011"]),
+    "r": ("27", RED, ["Speed 27% 0.9GHz of 3.3GHz", "Far slower, not hot (61C)", "Plug in, power mode", "Like a Core 2 Duo E6600 from 2006"]),
 }
 
 
