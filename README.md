@@ -8,7 +8,7 @@ Two slow readings, two different causes. HeatTray tells them apart, so you know 
 
 | Slow, **not hot**: check power mode and charger | Slow **and hot**: clear the vents |
 |---|---|
-| ![Orange 59%, tooltip: Slower, not hot (64C), Plug in, check power mode](screenshots/HeatTray-screenshot_tray.png) | ![Orange 59%, tooltip: Slower, and hot (97C), Clear vents, lift laptop](screenshots/HeatTray-screenshot_tray_hot.png) |
+| ![Orange 59%, tooltip: Slower, not hot (64C), Plug in, check power mode](screenshots/HeatTray-screenshot_tray.png) | ![Orange 47%, tooltip: Slower, and hot (99C), Clear vents, lift laptop](screenshots/HeatTray-screenshot_tray_hot.png) |
 
 *Staged for the pictures: the laptop was idle, so the idle threshold was lowered and the speed scaled down to look slow, and the temperature in the second picture was raised. In the left picture the 64C and the battery power are real.*
 
