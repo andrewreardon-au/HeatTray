@@ -119,13 +119,14 @@ def tile(img, cx, cy, size):
 
 
 READ = {   # the tooltips the app prints (HeatTray.cs, Render/SlowLines), as captured on 28 Oct 2026
-    "g": ("86", GREEN, ["Speed 86% 2.8GHz of 3.3GHz", "Working hard, all fine", "61C | load 8%"]),
-    "o": ("59", ORANGE, ["Speed 59% 1.9GHz of 3.3GHz", "Slower, not hot (63C)", "Plug in, power mode", "Like a Core i5-2500K from 2011"]),
-    "r": ("27", RED, ["Speed 27% 0.9GHz of 3.3GHz", "Far slower, not hot (61C)", "Plug in, power mode", "Like a Core 2 Duo E6600 from 2006"]),
+    "g": ("99", GREEN, ["Speed 99% 3.3GHz of 3.3GHz", "Working hard, all fine", "66C | load 59%"]),
+    "o": ("59", ORANGE, ["Speed 59% 1.9GHz of 3.3GHz", "Slower, not hot (64C)", "Plug in, check power mode", "Like a Core i5-2500K from 2011"]),
+    "h": ("59", ORANGE, ["Speed 59% 1.9GHz of 3.3GHz", "Slower, and hot (97C)", "Clear vents, lift laptop", "Like a Core i5-2500K from 2011"]),
+    "r": ("27", RED, ["Speed 27% 0.9GHz of 3.3GHz", "Far slower, not hot (59C)", "Plug in, check power mode", "Like a Core 2 Duo E6600 from 2006"]),
 }
 
 
-GLOW = {"g": ((14, 30, 22), (40, 170, 60)), "o": ((32, 24, 12), (190, 120, 20)), "r": ((32, 14, 16), (190, 50, 50))}
+GLOW = {"g": ((14, 30, 22), (40, 170, 60)), "o": ((32, 24, 12), (190, 120, 20)), "h": ((32, 24, 12), (190, 120, 20)), "r": ((32, 14, 16), (190, 50, 50))}
 
 
 def variant_b(key="g"):
@@ -150,7 +151,7 @@ def variant_b(key="g"):
     return img
 
 
-for name, fn in (("hero-green.png", lambda: variant_b("g")), ("hero-orange.png", lambda: variant_b("o")),
+for name, fn in (("hero-green.png", lambda: variant_b("g")), ("hero-orange.png", lambda: variant_b("o")), ("hero-hot.png", lambda: variant_b("h")),
                  ("hero-red.png", lambda: variant_b("r"))):
     im = fn().convert("RGB")
     assert im.size == (W, H)

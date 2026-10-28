@@ -62,7 +62,7 @@ internal static class HeatTray
     private const ushort VK_RETURN = 0x0D;
     private const uint FILE_TYPE_CHAR = 2;
 
-    internal const string Version = "2.1";
+    internal const string Version = "2.2";
     private const string VersionDate = "2026-10-28";
     private const string Author = "Andrew Reardon";
     private const string AuthorEmail = "andrewreardon@gmail.com";
@@ -75,6 +75,7 @@ internal static class HeatTray
     private static double RedPct = 40;     // ... below this: red
     // Test seam (hidden, not in -h): scales the perf counter so an idle machine can be staged in a slow state.
     private static double PerfScale = 1.0;
+    private static double TempOffset = 0;      // hidden test seam (--tempoffset): added to the thermal reading, for README screenshots
     private const int ShowPercent = 0, ShowGhz = 1, ShowBoth = 2;
     private static int IconShows = ShowPercent;   // what the icon says: speed %, GHz, or both (two lines)
 
@@ -309,6 +310,7 @@ internal static class HeatTray
             return; // implausible reading (counter glitch); skip this tick
         }
         _lastTempC = ReadTempC();
+        if (!double.IsNaN(_lastTempC)) _lastTempC += TempOffset;
         NoteTemp(_lastTempC);
 
         _perfRing.Enqueue(_lastPerf);
@@ -563,7 +565,7 @@ internal static class HeatTray
             return;
         }
         bool hot = hint == "Check cooling";
-        action = hint == "Check power mode" ? "Plug in, power mode" : (hot ? "Clear vents, lift laptop" : "Cooling or power mode?");
+        action = hint == "Check power mode" ? "Plug in, check power mode" : (hot ? "Clear vents, lift laptop" : "Cooling or power mode?");
         if (PeakNote().Length > 0)
         {
             // The heat has already eased but the slowdown outlasts it.
@@ -724,6 +726,11 @@ internal static class HeatTray
             {
                 // hidden test seam: no _anyCli, so it does not change which settings are loaded
                 if (TryNum(val, 0.01, 3, out d)) PerfScale = d;
+            }
+            else if (MatchOpt(args, ref i, null, "tempoffset", out val))
+            {
+                // hidden test seam, like --perfscale: degrees added to the temperature, so a screenshot can show the hot case
+                if (TryNum(val, -50, 80, out d)) TempOffset = d;
             }
         }
         return true;

@@ -1,6 +1,6 @@
 HEATTRAY
 
-v2.1 (2026-10-28)
+v2.2 (2026-10-28)
 Author: Andrew Reardon, andrewreardon@gmail.com
 
 Shows in the system tray, next to the clock, whether your CPU is really
@@ -347,6 +347,12 @@ the one exception is HOT when the temperature is at or above the hot
 threshold.
 
 
+WHAT'S NEW IN v2.2
+
+  * Clearer advice. When the CPU is slow and not hot, the action line now
+    reads "Plug in, check power mode".
+
+
 WHAT'S NEW IN v2.1
 
   * The tooltip shows the rated clock. Line 1 now reads "Speed 61% 2.0GHz
@@ -375,8 +381,8 @@ WHAT'S NEW IN v2.0
     HOT in orange instead of a number.
   * A tooltip that says what to do. Slow readings now have a verdict line
     with the temperature and an action line ("Clear vents, lift laptop",
-    "Plug in, power mode"). A computer with no temperature sensor says "no
-    temp sensor" instead of claiming the CPU is not hot.
+    "Plug in, check power mode"). A computer with no temperature sensor says
+    "no temp sensor" instead of claiming the CPU is not hot.
   * A proper start-up state. For the first ~15 seconds the icon is grey
     and the tooltip says "Starting up", instead of briefly reading "Idle"
     under load.

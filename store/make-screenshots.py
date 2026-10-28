@@ -22,7 +22,8 @@ FONT = r"C:\Windows\Fonts\seguisb.ttf"
 
 TASKBAR = [  # (source in store/shots, scale, caption, output)
     ("tray-green.png", 2.7, "How fast your CPU really runs, in the system tray", "screenshot-1-tray.png"),
-    ("tray-orange.png", 2.7, "Orange when it is running slower than it should", "screenshot-1-tray-orange.png"),
+    ("tray-orange.png", 2.7, "Slow but not hot: check the power mode", "screenshot-1-tray-orange.png"),
+    ("tray-hot.png", 2.7, "Slow because it is hot: clear the vents", "screenshot-1-tray-hot.png"),
     ("tray-red.png", 2.7, "Red when it is far slower", "screenshot-1-tray-red.png"),
     ("menu.png", 2.3, "Right-click for Details, Settings and Exit", "screenshot-2-menu.png"),
 ]

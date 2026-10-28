@@ -1,12 +1,16 @@
 # HeatTray
 
-**v2.1** (2026-10-28) by Andrew Reardon, andrewreardon@gmail.com
+**v2.2** (2026-10-28) by Andrew Reardon, andrewreardon@gmail.com
 
 Shows in the system tray whether your CPU is actually running slower than it can, so you know when heat is genuinely costing you performance and when you can let it ride.
 
-![HeatTray in the system tray showing 59% in orange, with the hover tooltip](screenshots/HeatTray-screenshot_tray.png)
+Two slow readings, two different causes. HeatTray tells them apart, so you know what to fix:
 
-*An example of a slowed reading: the icon is orange and the tooltip says what it feels like. Staged for the picture: the laptop was idle, so the idle threshold was lowered and the reading scaled down to make it look slow.*
+| Slow, **not hot**: check power mode and charger | Slow **and hot**: clear the vents |
+|---|---|
+| ![Orange 59%, tooltip: Slower, not hot (64C), Plug in, check power mode](screenshots/HeatTray-screenshot_tray.png) | ![Orange 59%, tooltip: Slower, and hot (97C), Clear vents, lift laptop](screenshots/HeatTray-screenshot_tray_hot.png) |
+
+*Staged for the pictures: the laptop was idle, so the idle threshold was lowered and the speed scaled down to look slow, and the temperature in the second picture was raised. In the left picture the 64C and the battery power are real.*
 
 ## How is this different from HWiNFO?
 
@@ -202,6 +206,10 @@ It reads three standard Windows performance counters:
 
 Readings are smoothed over the last 3 samples (about 15 seconds). Above the idle threshold (30% load) the speed is coloured green, orange or red by the thresholds. Below it the same percentage is shown in green, and never orange or red; the one exception is `HOT` when the temperature is at or above the hot threshold.
 
+## What's new in v2.2
+
+- **Clearer advice.** When the CPU is slow and not hot, the action line now reads *Plug in, check power mode*.
+
 ## What's new in v2.1
 
 - **The tooltip shows the rated clock.** Line 1 now reads `Speed 61% 2.0GHz of 3.3GHz`: the current clock out of the CPU's rated one.
@@ -214,7 +222,7 @@ Readings are smoothed over the last 3 samples (about 15 seconds). Above the idle
 - **New defaults for the colours:** orange under 70%, red under 40% of rated speed. If your `settings.ini` still has the old defaults (85 and 70) they move to these; custom values are kept.
 - **Light load looks reassuring.** The icon stays green while the load is under the idle threshold, and the tooltip says why the figure is not 100: *Light load: core speed is variable*. Values over 100 are shown as they are, with the tag *Boosting: faster than rated*.
 - **`HOT` at light load.** A lightly loaded CPU at 85 °C or more shows the word `HOT` in orange instead of a number.
-- **A tooltip that says what to do.** Slow readings now have a verdict line with the temperature and an action line (*Clear vents, lift laptop*, *Plug in, power mode*). A machine with no temperature sensor says *no temp sensor* instead of claiming the CPU is not hot.
+- **A tooltip that says what to do.** Slow readings now have a verdict line with the temperature and an action line (*Clear vents, lift laptop*, *Plug in, check power mode*). A machine with no temperature sensor says *no temp sensor* instead of claiming the CPU is not hot.
 - **A proper start-up state.** For the first ~15 seconds the icon is grey and the tooltip says *Starting up*, instead of briefly reading *Idle* under load.
 - Details has a **Why not 100%?** note and shows the rated clock the percentage is taken from.
 
@@ -240,7 +248,7 @@ csc.exe /nologo /target:winexe /platform:x64 /out:dist\HeatTray.exe /win32icon:s
 
 `csc.exe` is the one bundled with .NET Framework 4 (`C:\Windows\Microsoft.NET\Framework64\v4.0.30319`). Or just run `build.ps1`.
 
-SHA-256 of the committed `dist/HeatTray.exe` (v2.1): `6B91D8A352988CBE9E81B82FB0E3FB1E50B34AE432EC7D3AC10DFB27CB3CC8BD`
+SHA-256 of the committed `dist/HeatTray.exe` (v2.2): `4F9E2267874B6993B0EEDCF3BB85770BD6FFF2B51E4161F5E9E3FB9352CCC249`
 
 ## License
 
