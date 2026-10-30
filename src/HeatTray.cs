@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Drawing.Text;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
@@ -62,7 +65,7 @@ internal static class HeatTray
     private const ushort VK_RETURN = 0x0D;
     private const uint FILE_TYPE_CHAR = 2;
 
-    internal const string Version = "2.2";
+    internal const string Version = "2.3";
     private const string VersionDate = "2026-10-28";
     private const string Author = "Andrew Reardon";
     private const string AuthorEmail = "andrewreardon@gmail.com";
@@ -76,8 +79,9 @@ internal static class HeatTray
     // Test seam (hidden, not in -h): scales the perf counter so an idle machine can be staged in a slow state.
     private static double PerfScale = 1.0;
     private static double TempOffset = 0;      // hidden test seam (--tempoffset): added to the thermal reading, for README screenshots
-    private const int ShowPercent = 0, ShowGhz = 1, ShowBoth = 2;
-    private static int IconShows = ShowPercent;   // what the icon says: speed %, GHz, or both (two lines)
+    private const int ShowPercent = 0, ShowGhz = 1, ShowBoth = 2, ShowRatio = 3, ShowRatioGhz = 4, ShowTemp = 5, ShowUsage = 6, ShowUsageGhz = 7;
+    private static int IconShows = ShowRatio;   // what the icon says: ratio, usage, temperature, percent, GHz, or two-line combos
+    private static bool TempF = false;          // show temperatures in Fahrenheit (storage and CLI stay Celsius)
 
     // Command-line options always win: if any tunable was passed, settings.ini
     // is not loaded at all (defaults + flags only), and flags are never
@@ -157,10 +161,10 @@ internal static class HeatTray
         Application.EnableVisualStyles();
 
         var menu = new ContextMenuStrip();
-        var detailsItem = menu.Items.Add("Details...");
-        detailsItem.Click += (s, e) => ShowDetailsDialog();
         var settingsItem = menu.Items.Add("Settings...");
         settingsItem.Click += (s, e) => ShowSettingsDialog();
+        var detailsItem = menu.Items.Add("Details...");
+        detailsItem.Click += (s, e) => ShowDetailsDialog();
         var aboutItem = menu.Items.Add("About HeatTray...");
         aboutItem.Click += (s, e) => ShowAboutDialog();
         menu.Items.Add(new ToolStripSeparator());
@@ -177,7 +181,7 @@ internal static class HeatTray
         {
             if (e.Button == MouseButtons.Left)
             {
-                ShowDetailsDialog();
+                ShowSettingsDialog();
             }
         };
 
@@ -398,6 +402,17 @@ internal static class HeatTray
         return peak;
     }
 
+    // Temperature display helpers. Internals (sensors, config files, --warn CLI) stay in Celsius;
+    // only the UI is converted when TempF is on. "F" takes an upper-case suffix to match "C".
+    private static double CToDisplay(double c) { return TempF ? c * 9.0 / 5.0 + 32.0 : c; }
+    private static double DisplayToC(double d) { return TempF ? (d - 32.0) * 5.0 / 9.0 : d; }
+    private static string TempUnit() { return TempF ? "F" : "C"; }
+    private static string FmtTemp(double c)
+    {
+        if (double.IsNaN(c)) return "?";
+        return string.Format(CultureInfo.InvariantCulture, "{0:0}{1}", CToDisplay(c), TempUnit());
+    }
+
     // Cause hint for a slow reading when the temperature is t (NaN = unknown).
     // Slow + hot -> cooling; slow + cool -> power mode / AC / firmware cap; no sensor -> unknown.
     private static string HintFor(double t)
@@ -421,7 +436,7 @@ internal static class HeatTray
     {
         double peak = HeatTempC();
         if (_speedPct < 0 || _speedPct >= AmberPct || double.IsNaN(peak) || HintFor(peak) == HintFor(_lastTempC)) return "";
-        return string.Format(" (peaked {0:0}C)", peak);
+        return " (peaked " + FmtTemp(peak) + ")";
     }
 
     private static string AdviceLong()
@@ -435,7 +450,7 @@ internal static class HeatTray
                     : (_speedPct > 100 ? "Boosting above its rated speed. Carry on." : "Running at a healthy speed. Carry on.");
             case "Check cooling":
                 return eased
-                    ? string.Format("Slow, and it was hot within the last 2 minutes (peak {0:0}C): a heat slowdown can outlast the heat. Act on cooling (airflow, dust, surface) or reduce the workload.", HeatTempC())
+                    ? "Slow, and it was hot within the last 2 minutes (peak " + FmtTemp(HeatTempC()) + "): a heat slowdown can outlast the heat. Act on cooling (airflow, dust, surface) or reduce the workload."
                     : "Slow AND hot: act on cooling (airflow, dust, surface) or reduce the workload.";
             case "Cause unknown":
                 return "Slow, and this machine reports no temperature, so the cause is unknown. Check the power mode, AC power / charger wattage or a firmware power cap, and make sure the vents are clear.";
@@ -443,7 +458,7 @@ internal static class HeatTray
                 return "Slow but not hot, so this isn't heat. Check the power mode, AC power / charger wattage, or a firmware power cap.";
             case "Heat or power cap":
                 return eased
-                    ? string.Format("Slow, and it was warm within the last 2 minutes (peak {0:0}C): could be heat or a power limit. Watch whether it gets hotter; check power mode too.", HeatTempC())
+                    ? "Slow, and it was warm within the last 2 minutes (peak " + FmtTemp(HeatTempC()) + "): could be heat or a power limit. Watch whether it gets hotter; check power mode too."
                     : "Slow and warm: could be heat or a power limit. Watch whether it gets hotter; check power mode too.";
         }
         return null;
@@ -488,14 +503,27 @@ internal static class HeatTray
 
     private static void Render()
     {
-        string tempText = double.IsNaN(_lastTempC) ? "no temp" : string.Format("{0:0}C", _lastTempC);
-        string tempLoad = tempText + " | " + string.Format("load {0:0}%", _smoothUtil);
+        string cpuTemp = double.IsNaN(_lastTempC)
+            ? "no temp sensor"
+            : string.Format(CultureInfo.InvariantCulture, "{0:0} {1}", CToDisplay(_lastTempC), TempUnit());
+        string cpuLine = string.Format(CultureInfo.InvariantCulture, "CPU: {0}, usage {1:0}%", cpuTemp, _smoothUtil);
 
         if (!_ready)
         {
-            // The smoothing window is not full yet: no verdict, just the live reading in grey.
+            // The smoothing window is not full yet: no verdict, just the live reading in grey,
+            // formatted the same way as the full icon (ratio / temp / percent / GHz) so startup
+            // doesn't flash a disconnected number.
             SetTooltip("Starting up\nMeasuring CPU speed\nReady in seconds");
-            ApplyIcon(((int)Math.Round(Math.Min(_lastPerf, 999))).ToString(CultureInfo.InvariantCulture), null, Tone.Neutral, Tone.Neutral);
+            int pctNow = (int)Math.Round(Math.Min(_lastPerf, 999));
+            double gNow = Ghz(_lastPerf);
+            string rNow = (_lastPerf / 100.0).ToString("0.0", CultureInfo.InvariantCulture);
+            string tNow = double.IsNaN(_lastTempC) ? "?" : FmtTemp(_lastTempC);
+            string uNow = ((int)Math.Round(Math.Min(_lastUtil, 999))).ToString(CultureInfo.InvariantCulture) + "%";
+            string sTop, sBottom;
+            IconLines(IconShows, pctNow.ToString(CultureInfo.InvariantCulture),
+                double.IsNaN(gNow) ? null : gNow.ToString("0.0", CultureInfo.InvariantCulture),
+                rNow, tNow, uNow, out sTop, out sBottom);
+            ApplyIcon(sTop, sBottom, Tone.Neutral, Tone.Neutral);
             return;
         }
 
@@ -514,22 +542,24 @@ internal static class HeatTray
         }
         bool hotIdle = !_loaded && !double.IsNaN(_lastTempC) && _lastTempC >= WarnC;
 
-        // Short lines, not one long one: the taskbar wraps long tray tooltips. Line 1 is always the speed.
-        string tip = string.Format("Speed {0}%{1}{2}\n", shown, ghzText, arrow);
+        // Three labelled lines (Speed / Load / CPU), short so the taskbar does not wrap them.
+        // The slow case keeps an extra action line between Load and CPU; Reckoner's "Like" tag
+        // is appended after CPU to keep the first three lines predictable.
+        string tip = string.Format("Speed: {0}%{1}{2}\n", shown, ghzText, arrow);
         if (!_loaded)
         {
-            tip += hotIdle ? "Hot at light load\nClear vents, lift laptop\n" + tempLoad
-                           : "Light load: core speed is variable\n" + tempLoad;
+            tip += "Load: " + (hotIdle ? "Hot at light load\nClear vents, lift laptop\n"
+                                       : "Light load, core speed is variable\n") + cpuLine;
         }
         else if (_speedPct >= AmberPct)
         {
-            tip += (_speedPct > 100 ? "Boosting: faster than rated" : "Working hard, all fine") + "\n" + tempLoad;
+            tip += "Load: " + (_speedPct > 100 ? "Boosting, faster than rated" : "Working hard, all fine") + "\n" + cpuLine;
         }
         else
         {
             string verdict, action;
             SlowLines(out verdict, out action);
-            tip += verdict + "\n" + action;
+            tip += "Load: " + verdict + "\n" + action + "\n" + cpuLine;
             string like = Reckoner(_speedPct);
             if (like != null) tip += "\nLike " + like;
         }
@@ -545,8 +575,12 @@ internal static class HeatTray
         }
         else
         {
+            string ratioText = (_smoothPerf / 100.0).ToString("0.0", CultureInfo.InvariantCulture);
+            string tempIcon = double.IsNaN(_lastTempC) ? "?" : FmtTemp(_lastTempC);
+            string usageIcon = ((int)Math.Round(Math.Min(_smoothUtil, 999))).ToString(CultureInfo.InvariantCulture) + "%";
             IconLines(IconShows, shown.ToString(CultureInfo.InvariantCulture),
-                double.IsNaN(g) ? null : g.ToString("0.0", CultureInfo.InvariantCulture), out top, out bottom);
+                double.IsNaN(g) ? null : g.ToString("0.0", CultureInfo.InvariantCulture),
+                ratioText, tempIcon, usageIcon, out top, out bottom);
         }
         ApplyIcon(top, bottom, tone, tone);
     }
@@ -570,11 +604,11 @@ internal static class HeatTray
         {
             // The heat has already eased but the slowdown outlasts it.
             string what = hot ? (red ? "Too hot" : "Hot") : slower;
-            verdict = double.IsNaN(now) ? string.Format("{0} (peak {1:0}C)", what, peak)
-                                        : string.Format("{0} (now {1:0}C, peak {2:0}C)", what, now, peak);
+            verdict = double.IsNaN(now) ? what + " (peak " + FmtTemp(peak) + ")"
+                                        : what + " (now " + FmtTemp(now) + ", peak " + FmtTemp(peak) + ")";
             return;
         }
-        string temp = string.Format(" ({0:0}C)", peak);
+        string temp = " (" + FmtTemp(peak) + ")";
         verdict = hot ? (red ? "Too hot, very slow" : "Slower, and hot") + temp
                       : (hint == "Check power mode" ? slower + ", not hot" : slower + ", warm") + temp;
     }
@@ -590,17 +624,42 @@ internal static class HeatTray
 
     // The icon's one or two lines for the chosen display; bottom is null for a single big
     // number. With no rated clock there is no GHz, so it falls back to the percent.
-    private static void IconLines(int show, string pctText, string ghzText, out string top, out string bottom)
+    private static void IconLines(int show, string pctText, string ghzText, string ratioText, string tempText, string usageText, out string top, out string bottom)
     {
         bottom = null;
+        if (show == ShowRatio) { top = ratioText; return; }
+        if (show == ShowUsage) { top = usageText; return; }
+        if (show == ShowTemp) { top = tempText; return; }
         if (ghzText != null && show == ShowGhz) { top = ghzText; return; }
+        if (show == ShowRatioGhz)
+        {
+            top = ratioText;
+            if (ghzText != null) bottom = ghzText;
+            return;
+        }
+        if (show == ShowUsageGhz)
+        {
+            top = usageText;
+            if (ghzText != null) bottom = ghzText;
+            return;
+        }
         top = pctText;
         if (ghzText != null && show == ShowBoth) bottom = ghzText;
     }
 
     private static string ShowName(int show)
     {
-        return show == ShowGhz ? "ghz" : (show == ShowBoth ? "both" : "percent");
+        switch (show)
+        {
+            case ShowGhz: return "ghz";
+            case ShowBoth: return "both";
+            case ShowRatio: return "ratio";
+            case ShowRatioGhz: return "ratio-ghz";
+            case ShowTemp: return "temp";
+            case ShowUsage: return "usage";
+            case ShowUsageGhz: return "usage-ghz";
+            default: return "percent";
+        }
     }
 
     // -1 when the text is not one of the choices.
@@ -610,7 +669,12 @@ internal static class HeatTray
         {
             case "percent": case "pct": return ShowPercent;
             case "ghz": return ShowGhz;
-            case "both": return ShowBoth;
+            case "both": case "percent-ghz": case "percent+ghz": return ShowBoth;
+            case "ratio": return ShowRatio;
+            case "ratio-ghz": case "ratio+ghz": return ShowRatioGhz;
+            case "temp": case "temperature": return ShowTemp;
+            case "usage": return ShowUsage;
+            case "usage-ghz": case "usage+ghz": return ShowUsageGhz;
         }
         return -1;
     }
@@ -660,7 +724,9 @@ internal static class HeatTray
         field = 0;
         if (!TryNum(interval.Trim(), 1, 60, out v)) return "Sample every: enter a number of seconds from 1 to 60.";
         field = 1;
-        if (!TryNum(warn.Trim(), 30, 120, out v)) return "Count as hot at: enter a temperature from 30 to 120 C.";
+        double warnMin = TempF ? 86 : 30, warnMax = TempF ? 248 : 120;
+        if (!TryNum(warn.Trim(), warnMin, warnMax, out v))
+            return "Count as hot at: enter a temperature from " + ((int)warnMin) + " to " + ((int)warnMax) + " " + TempUnit() + ".";
         field = 2;
         if (!TryNum(gate.Trim(), 5, 80, out v)) return "Idle below CPU load: enter a percentage from 5 to 80.";
         field = 3;
@@ -747,7 +813,8 @@ internal static class HeatTray
                "  --gate=<pct>                 CPU load % below which it counts as idle (default 30)\r\n" +
                "  --amber=<pct>                amber when speed is below this % of rated (default 70)\r\n" +
                "  --red=<pct>                  red when speed is below this % of rated (default 40)\r\n" +
-               "  --show=<percent|ghz|both>    what the icon shows (default percent)\r\n" +
+               "  --show=<ratio|usage|temp|percent|ghz|ratio-ghz|usage-ghz|both>\r\n" +
+               "                              what the icon shows (default ratio)\r\n" +
                "  --diag                       print counter availability + 5 live samples, then exit\r\n" +
                "  -h, --help                   show this help and exit\r\n" +
                "  -v, --version                show version info and exit\r\n" +
@@ -822,7 +889,8 @@ internal static class HeatTray
         sb.AppendLine("Counter load: " + (_cUtil != null ? "OK (" + _utilSource + ")" : "MISSING"));
         sb.AppendLine("Thermal zones: " + _cTemps.Count + (_cTemps.Count == 0 ? " (none exposed; temperature will be unavailable, speed still works)" : ""));
         sb.AppendLine("Taskbar theme: " + (IsLightTaskbar() ? "light" : "dark") + " (sets the icon text colours)");
-        sb.AppendLine("Icon shows: " + ShowName(IconShows) + " (Settings, or --show=percent|ghz|both)");
+        sb.AppendLine("Icon shows: " + ShowName(IconShows) + " (Settings, or --show=ratio|usage|temp|percent|ghz|ratio-ghz|usage-ghz|both)");
+        sb.AppendLine("Temperature unit: " + (TempF ? "Fahrenheit (F)" : "Celsius (C)") + " (Settings; --warn is always in C)");
         sb.AppendLine();
         sb.AppendLine("Live samples (1s apart):");
         sb.AppendLine("  perf%   load%   temp");
@@ -978,8 +1046,7 @@ internal static class HeatTray
                 double.IsNaN(ghz) ? "" : string.Format(" (~{0:0.0} GHz)", ghz)));
             double peakT = HeatTempC();
             Row(sb, "Temperature:", double.IsNaN(_lastTempC) ? "not exposed by this machine"
-                : string.Format("{0:0} C{1}", _lastTempC,
-                    peakT - _lastTempC >= 1 ? string.Format(" (hottest in the last 2 minutes: {0:0} C)", peakT) : ""));
+                : FmtTemp(_lastTempC) + (peakT - _lastTempC >= 1 ? " (hottest in the last 2 minutes: " + FmtTemp(peakT) + ")" : ""));
             if (_speedPct >= 0)
             {
                 Row(sb, "Verdict:", string.Format("{0}: {1:0}% of rated speed",
@@ -1008,11 +1075,11 @@ internal static class HeatTray
             {
                 if (!double.IsNaN(_lastTempC) && _lastTempC >= WarnC)
                 {
-                    Row(sb, "Status:", string.Format("Hot at light load ({0:0} C). Something is trapping heat: lift the laptop onto a hard, flat surface and clear the vents. The icon shows HOT in amber.", _lastTempC));
+                    Row(sb, "Status:", "Hot at light load (" + FmtTemp(_lastTempC) + "). Something is trapping heat: lift the laptop onto a hard, flat surface and clear the vents. The icon shows HOT in amber.");
                 }
                 else
                 {
-                    Row(sb, "Status:", string.Format("Light load (below {0:0}% CPU load, so speed is not checked). With little to do, core speed varies on its own to save power, so the figure can be well below or above the rated speed and says little about heat. The icon stays green, and shows HOT in amber if the CPU is {1:0} C or more while idle.", GateUtil, WarnC));
+                    Row(sb, "Status:", string.Format("Light load (below {0:0}% CPU load, so speed is not checked). With little to do, core speed varies on its own to save power, so the figure can be well below or above the rated speed and says little about heat. The icon stays green, and shows HOT in amber if the CPU is {1} or more while idle.", GateUtil, FmtTemp(WarnC)));
                 }
             }
             else
@@ -1030,12 +1097,12 @@ internal static class HeatTray
         Row(sb, "Green:", string.Format("light load, or working at {0:0}% of rated speed or more (above 100% is boost)", AmberPct));
         Row(sb, "Amber:", string.Format("under load, below {0:0}% of rated speed", AmberPct));
         Row(sb, "Red:", string.Format("under load, below {0:0}% of rated speed", RedPct));
-        Row(sb, "HOT:", string.Format("amber word on the icon when the CPU is {0:0} C or more at light load", WarnC));
+        Row(sb, "HOT:", "amber word on the icon when the CPU is " + FmtTemp(WarnC) + " or more at light load");
         sb.AppendLine();
         sb.AppendLine("HOW TO READ IT");
         Row(sb, "Speed near 100%:", "ignore the temperature, carry on.");
-        Row(sb, string.Format("Slow, >= {0:0} C:", WarnC), "act on cooling or reduce the workload.");
-        Row(sb, string.Format("Slow, < {0:0} C:", WarnC - 5), "not heat: check the power mode / AC power.");
+        Row(sb, "Slow, >= " + FmtTemp(WarnC) + ":", "act on cooling or reduce the workload.");
+        Row(sb, "Slow, < " + FmtTemp(WarnC - 5) + ":", "not heat: check the power mode / AC power.");
         Row(sb, "No sensor:", "if this machine reports no temperature, a slow reading says the cause is unknown: check the power mode, the charger and the vents.");
         Row(sb, "Hints use:", "the hottest temperature of the last 2 minutes, not just now: a heat slowdown can outlast the heat.");
         Row(sb, "Icon:", "your busy-core speed as a % of the CPU's rated clock, or GHz, or both: choose in Settings. Grey only while HeatTray is starting.");
@@ -1124,7 +1191,7 @@ internal static class HeatTray
         {
             if (!File.Exists(ConfigPath)) return;
 
-            bool sawAmber = false, sawRed = false;
+            bool sawAmber = false, sawRed = false, sawShow = false;
             int fileVersion = 0;   // v1.x files have no v= line
             foreach (string rawLine in File.ReadAllLines(ConfigPath))
             {
@@ -1139,18 +1206,22 @@ internal static class HeatTray
                 double d;
 
                 if (key == "v") { int.TryParse(value, out fileVersion); }
-                else if (key == "show") { int s = ParseShow(value); if (s >= 0) IconShows = s; }
+                else if (key == "show") { int s = ParseShow(value); if (s >= 0) { IconShows = s; sawShow = true; } }
                 else if (key == "interval" && TryNum(value, 1, 60, out d)) IntervalMs = (int)(d * 1000);
                 else if (key == "warn" && TryNum(value, 30, 120, out d)) WarnC = d;
                 else if (key == "gate" && TryNum(value, 5, 80, out d)) GateUtil = d;
                 else if (key == "amber" && TryNum(value, 10, 100, out d)) { AmberPct = d; sawAmber = true; }
                 else if (key == "red" && TryNum(value, 10, 100, out d)) { RedPct = d; sawRed = true; }
+                else if (key == "tempunit") { string u = value.Trim().ToLowerInvariant(); if (u == "f" || u == "fahrenheit") TempF = true; else if (u == "c" || u == "celsius") TempF = false; }
             }
             // v1.x measured speed against a calibrated reference and saved 85 / 70 as its defaults. In a file
             // without a v= line those two exact values mean "never changed": move them to the v2 defaults (the
             // scale is now % of rated). Any other pair was a deliberate choice and is kept, and so is 85 / 70 in a
             // v2 file (SaveSettings writes v=2), which someone chose on purpose.
             if (fileVersion < 2 && sawAmber && sawRed && AmberPct == 85 && RedPct == 70) { AmberPct = 70; RedPct = 40; }
+            // v3 adds the Ratio display. Pre-v3 files that still carry the old "percent" default
+            // (or had no show= line) are migrated to the new Ratio default on first launch.
+            if (fileVersion < 3 && (!sawShow || IconShows == ShowPercent)) IconShows = ShowRatio;
         }
         catch
         {
@@ -1164,13 +1235,14 @@ internal static class HeatTray
         {
             File.WriteAllLines(ConfigPath, new[]
             {
-                "v=2",
+                "v=3",
                 "interval=" + (IntervalMs / 1000),
                 "warn=" + WarnC.ToString(CultureInfo.InvariantCulture),
                 "gate=" + GateUtil.ToString(CultureInfo.InvariantCulture),
                 "amber=" + AmberPct.ToString(CultureInfo.InvariantCulture),
                 "red=" + RedPct.ToString(CultureInfo.InvariantCulture),
-                "show=" + ShowName(IconShows)
+                "show=" + ShowName(IconShows),
+                "tempunit=" + (TempF ? "f" : "c")
             });
         }
         catch
@@ -1179,11 +1251,23 @@ internal static class HeatTray
         }
     }
 
+    // Rows share the same right edge (260 + 70 = 330) as the combos above (210 + 120 = 330), so
+    // every input lines up on the right regardless of width.
     private static TextBox AddRow(Form form, string label, string value, int top, string name)
     {
-        form.Controls.Add(new Label { Text = label, Left = 15, Top = top + 3, Width = 215 });
-        var box = new TextBox { Name = name, Text = value, Left = 240, Top = top, Width = 70 };
+        form.Controls.Add(new Label { Text = label, Left = 15, Top = top + 3, Width = 240 });
+        var box = new TextBox { Name = name, Text = value, Left = 260, Top = top, Width = 70, TextAlign = HorizontalAlignment.Right };
         form.Controls.Add(box);
+        return box;
+    }
+
+    // Same row style, but hosted inside a GroupBox (coordinates are relative to the group).
+    // Label at x=10, text box right-edged at x=315 so numbers in the two groups look aligned.
+    private static TextBox AddRowIn(GroupBox group, string label, string value, int top, string name)
+    {
+        group.Controls.Add(new Label { Text = label, Left = 10, Top = top + 3, Width = 230 });
+        var box = new TextBox { Name = name, Text = value, Left = 245, Top = top, Width = 70, TextAlign = HorizontalAlignment.Right };
+        group.Controls.Add(box);
         return box;
     }
 
@@ -1198,32 +1282,75 @@ internal static class HeatTray
             form.StartPosition = FormStartPosition.CenterScreen;
             form.MinimizeBox = false;
             form.MaximizeBox = false;
-            form.ClientSize = new Size(325, 297);
-            // The inputs are 70 px wide: the "Icon shows" drop-down needs about 67 px to show "Percent" in full.
+            form.Font = SystemFonts.MessageBoxFont;    // Segoe UI, matches the rest of Windows
+            form.ClientSize = new Size(360, 400);
 
-            form.Controls.Add(new Label { Text = "Icon shows:", Left = 15, Top = 18, Width = 215 });
-            var showBox = new ComboBox { Left = 240, Top = 15, Width = 70, DropDownStyle = ComboBoxStyle.DropDownList };
-            showBox.Items.AddRange(new object[] { "Percent", "GHz", "Both" });   // index = ShowPercent / ShowGhz / ShowBoth
-            showBox.SelectedIndex = IconShows;
-            form.Controls.Add(showBox);
+            // Inside a GroupBox, child coordinates are relative to the group box, not the form.
+            // Each row: label left=10 width=170; input right-edged at x=305 (box inner width ~ 320).
 
-            var intervalBox = AddRow(form, "Sample every (sec):", (IntervalMs / 1000).ToString(CultureInfo.InvariantCulture), 47, "intervalBox");
-            var warnBox = AddRow(form, "Count as hot at (C):", WarnC.ToString(CultureInfo.InvariantCulture), 79, "warnBox");
-            var gateBox = AddRow(form, "Idle below CPU load (%):", GateUtil.ToString(CultureInfo.InvariantCulture), 111, "gateBox");
-            var amberBox = AddRow(form, "Amber below (% of rated):", AmberPct.ToString(CultureInfo.InvariantCulture), 143, "amberBox");
-            var redBox = AddRow(form, "Red below (% of rated):", RedPct.ToString(CultureInfo.InvariantCulture), 175, "redBox");
+            // DISPLAY
+            var displayGroup = new GroupBox { Text = "Display", Left = 15, Top = 10, Width = 330, Height = 90 };
+            form.Controls.Add(displayGroup);
+
+            displayGroup.Controls.Add(new Label { Text = "Icon shows:", Left = 10, Top = 28, Width = 150 });
+            var showBox = new ComboBox { Left = 180, Top = 25, Width = 135, DropDownStyle = ComboBoxStyle.DropDownList };
+            // Dropdown order (Ratio first); the parallel array maps ComboBox index -> Show* constant.
+            int[] showMap = new[] { ShowRatio, ShowUsage, ShowTemp, ShowPercent, ShowGhz, ShowRatioGhz, ShowUsageGhz, ShowBoth };
+            showBox.Items.AddRange(new object[] { "Speed ratio", "Usage", "Temperature", "Percent", "GHz", "Speed ratio + GHz", "Usage + GHz", "Percent + GHz" });
+            showBox.SelectedIndex = Math.Max(0, Array.IndexOf(showMap, IconShows));
+            displayGroup.Controls.Add(showBox);
+
+            displayGroup.Controls.Add(new Label { Text = "Temperature unit:", Left = 10, Top = 60, Width = 150 });
+            var unitBox = new ComboBox { Left = 180, Top = 57, Width = 135, DropDownStyle = ComboBoxStyle.DropDownList };
+            unitBox.Items.AddRange(new object[] { "Celsius (C)", "Fahrenheit (F)" });
+            unitBox.SelectedIndex = TempF ? 1 : 0;
+            displayGroup.Controls.Add(unitBox);
+
+            // THRESHOLDS
+            var thresholdsGroup = new GroupBox { Text = "Thresholds", Left = 15, Top = 110, Width = 330, Height = 185 };
+            form.Controls.Add(thresholdsGroup);
+
+            var intervalBox = AddRowIn(thresholdsGroup, "Sample every (sec):",
+                (IntervalMs / 1000).ToString(CultureInfo.InvariantCulture), 25, "intervalBox");
+            var warnBox = AddRowIn(thresholdsGroup, "Count as hot at (" + TempUnit() + "):",
+                ((int)Math.Round(CToDisplay(WarnC))).ToString(CultureInfo.InvariantCulture), 55, "warnBox");
+            var gateBox = AddRowIn(thresholdsGroup, "Idle below CPU load (%):",
+                GateUtil.ToString(CultureInfo.InvariantCulture), 85, "gateBox");
+            var amberBox = AddRowIn(thresholdsGroup, "Amber below (% of rated):",
+                AmberPct.ToString(CultureInfo.InvariantCulture), 115, "amberBox");
+            var redBox = AddRowIn(thresholdsGroup, "Red below (% of rated):",
+                RedPct.ToString(CultureInfo.InvariantCulture), 145, "redBox");
+
+            // Switching the unit while the dialog is open relabels the hot box AND converts whatever
+            // is currently typed, so the number keeps its meaning (85 C becomes 185 F, not stays 85 F).
+            Label warnLabel = null;
+            foreach (Control c in thresholdsGroup.Controls) { var l = c as Label; if (l != null && l.Text.StartsWith("Count as hot at ")) { warnLabel = l; break; } }
+            unitBox.SelectedIndexChanged += (s, e) =>
+            {
+                bool nowF = unitBox.SelectedIndex == 1;
+                if (nowF == TempF) return;
+                double parsed;
+                if (TryNum(warnBox.Text.Trim(), -100, 500, out parsed))
+                {
+                    double asC = TempF ? (parsed - 32.0) * 5.0 / 9.0 : parsed;
+                    double shown = nowF ? asC * 9.0 / 5.0 + 32.0 : asC;
+                    warnBox.Text = ((int)Math.Round(shown)).ToString(CultureInfo.InvariantCulture);
+                }
+                TempF = nowF;
+                if (warnLabel != null) warnLabel.Text = "Count as hot at (" + TempUnit() + "):";
+            };
 
             // The hint, which turns into the message when OK finds something wrong (see FormClosing below).
             var hint = new Label
             {
                 Name = "hint",
-                Text = "Green at light load or when healthy; amber or red only under load, below these % of the CPU's rated clock. \"Hot\" just changes the hint and the HOT warning.",
-                Left = 15, Top = 212, Width = 295, Height = 48, ForeColor = SystemColors.GrayText
+                Text = "Amber and red only trigger under load, below these percentages of the CPU's rated clock. \"Hot\" affects the hints and the HOT warning only.",
+                Left = 15, Top = 305, Width = 330, Height = 48, ForeColor = SystemColors.GrayText
             };
             form.Controls.Add(hint);
 
-            var okButton = new Button { Text = "OK", Left = 120, Top = 262, Width = 80, DialogResult = DialogResult.OK };
-            var cancelButton = new Button { Text = "Cancel", Left = 210, Top = 262, Width = 80, DialogResult = DialogResult.Cancel };
+            var okButton = new Button { Text = "OK", Left = 177, Top = 362, Width = 80, DialogResult = DialogResult.OK };
+            var cancelButton = new Button { Text = "Cancel", Left = 265, Top = 362, Width = 80, DialogResult = DialogResult.Cancel };
             form.Controls.Add(okButton);
             form.Controls.Add(cancelButton);
             form.AcceptButton = okButton;
@@ -1262,8 +1389,9 @@ internal static class HeatTray
             // Only an OK with nothing wrong gets here (FormClosing above), so all of this parses; the
             // check is a guard, not a second set of rules.
             double interval = 0, warn = 0, gate = 0, amber = 0, red = 0;
+            double warnMin = TempF ? 86 : 30, warnMax = TempF ? 248 : 120;
             bool ok = TryNum(intervalBox.Text.Trim(), 1, 60, out interval) &&
-                      TryNum(warnBox.Text.Trim(), 30, 120, out warn) &&
+                      TryNum(warnBox.Text.Trim(), warnMin, warnMax, out warn) &&
                       TryNum(gateBox.Text.Trim(), 5, 80, out gate) &&
                       TryNum(amberBox.Text.Trim(), 10, 100, out amber) &&
                       TryNum(redBox.Text.Trim(), 10, 100, out red);
@@ -1274,8 +1402,8 @@ internal static class HeatTray
             }
 
             IntervalMs = (int)(interval * 1000);
-            WarnC = warn; GateUtil = gate; AmberPct = amber; RedPct = red;
-            IconShows = showBox.SelectedIndex;
+            WarnC = DisplayToC(warn); GateUtil = gate; AmberPct = amber; RedPct = red;
+            IconShows = showMap[showBox.SelectedIndex];
             _timer.Interval = IntervalMs;
             SaveSettings();
             Sample();
@@ -1362,29 +1490,33 @@ internal static class HeatTray
         }
     }
 
-    // Two lines of text (the bottom one optional) filling a 32x32 icon, like
-    // the clock / language indicator beside it.
+    // Two lines of text (the bottom one optional) filling an icon at the shell's current
+    // tray slot size. Rendering at this size (not 32x32 to be downsampled) keeps the digits -
+    // especially a decimal point - crisp.
     private static Icon RenderIcon(string top, string bottom, Tone topTone, Tone bottomTone, bool light)
     {
-        const int S = 32;
+        int S = Math.Max(16, Math.Min(48, SystemInformation.SmallIconSize.Width));
         Color topColor = ToneColor(topTone, light), bottomColor = ToneColor(bottomTone, light);
         // The halo is the opposite of the text: dark on a dark taskbar, light on a light one.
         Color halo = light ? Color.FromArgb(190, 255, 255, 255) : Color.FromArgb(190, 15, 15, 15);
-        using (var bmp = new Bitmap(S, S))
+        using (var bmp = new Bitmap(S, S, PixelFormat.Format32bppArgb))
         {
             using (var g = Graphics.FromImage(bmp))
             {
                 g.Clear(Color.Transparent);
-                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                // Margins and gap scale with the icon so the two-line layout stays balanced at any DPI.
+                float mx = S / 32f, pad = S / 32f * 2f, gap = S / 32f * 1.5f;
                 if (bottom == null)
                 {
-                    DrawFit(g, top, topColor, halo, new RectangleF(1, 2, S - 2, S - 4));
+                    DrawFit(g, top, topColor, halo, new RectangleF(mx, pad, S - 2 * mx, S - 2 * pad));
                 }
                 else
                 {
-                    // Each line gets 14.5 of the 32 px (0.75 px margins), with a 1.5 px gap.
-                    DrawFit(g, top, topColor, halo, new RectangleF(1, 0.75f, S - 2, 14.5f));
-                    DrawFit(g, bottom, bottomColor, halo, new RectangleF(1, 16.75f, S - 2, 14.5f));
+                    float lineH = (S - 2 * (S / 32f * 0.75f) - gap) / 2f;
+                    float y0 = S / 32f * 0.75f;
+                    DrawFit(g, top, topColor, halo, new RectangleF(mx, y0, S - 2 * mx, lineH));
+                    DrawFit(g, bottom, bottomColor, halo, new RectangleF(mx, y0 + lineH + gap, S - 2 * mx, lineH));
                 }
             }
 
@@ -1400,9 +1532,9 @@ internal static class HeatTray
 
     // The text as one outline path. Each character is placed by its ink, not by its advance
     // width, so a narrow "1" takes little room and "111" needs far less squeezing to fit.
-    private static System.Drawing.Drawing2D.GraphicsPath TightText(string text)
+    private static GraphicsPath TightText(string text)
     {
-        var path = new System.Drawing.Drawing2D.GraphicsPath();
+        var path = new GraphicsPath();
         FontStyle style = FontStyle.Regular;
         FontFamily family;
         try { family = new FontFamily("Segoe UI Semibold"); }
@@ -1412,12 +1544,12 @@ internal static class HeatTray
             float x = 0;
             foreach (char ch in text)
             {
-                using (var glyph = new System.Drawing.Drawing2D.GraphicsPath())
+                using (var glyph = new GraphicsPath())
                 {
                     glyph.AddString(ch.ToString(), family, (int)style, 100f, new PointF(0, 0), StringFormat.GenericTypographic);
                     RectangleF cb = glyph.GetBounds();
                     if (cb.Width <= 0) continue;
-                    using (var m = new System.Drawing.Drawing2D.Matrix())
+                    using (var m = new Matrix())
                     {
                         m.Translate(x - cb.X, 0);
                         glyph.Transform(m);
@@ -1430,38 +1562,34 @@ internal static class HeatTray
         return path;
     }
 
-    // Draws text as an outline path scaled to fill the box (digits as tall as the box allows),
-    // with a thin halo (none if the halo colour is transparent) so it reads on any taskbar.
+    // Draws text as an outline path scaled to fill the box, with a thin halo so it reads on any
+    // taskbar. Ink-tight packing keeps the decimal point visible even at small icon sizes.
     private static void DrawFit(Graphics g, string text, Color color, Color halo, RectangleF box)
     {
+        if (string.IsNullOrEmpty(text)) return;
         using (var path = TightText(text))
         {
             RectangleF b = path.GetBounds();
             if (b.Width <= 0 || b.Height <= 0) return;
-            // Two digits (and "<1") all share the scale of "88", so 11 and 88 have the same height and stroke
-            // weight (fitted on their own, narrow numbers came out bigger and bolder). A wide pair
-            // (a 4 is wider than an 8) is squeezed by its own width rather than clipped. Anything
-            // else is fitted on its own bounds.
             RectangleF r = b;
             if (text.Length == 2 && (char.IsDigit(text[0]) || text[0] == '<') && char.IsDigit(text[1]))
                 using (var rp = TightText("88")) r = rp.GetBounds();
-            // Fill the box height; if the text is too wide, squeeze it horizontally (never
-            // below MinSqueeze) and only then shrink it.
             float fitW = box.Width / r.Width, fitH = box.Height / r.Height;
             float sy = Math.Min(fitH, fitW / MinSqueeze);
             float sx = Math.Min(Math.Min(sy, fitW), box.Width / b.Width);
-            using (var m = new System.Drawing.Drawing2D.Matrix())
+            using (var m = new Matrix())
             {
                 m.Translate(box.X + box.Width / 2f, box.Y + box.Height / 2f);
                 m.Scale(sx, sy);
                 m.Translate(-(b.X + b.Width / 2f), -(r.Y + r.Height / 2f));
                 path.Transform(m);
             }
+            float stroke = Math.Max(1.25f, box.Height * 0.08f);
             if (halo.A > 0)
             {
-                using (var pen = new Pen(halo, 2f))
+                using (var pen = new Pen(halo, stroke))
                 {
-                    pen.LineJoin = System.Drawing.Drawing2D.LineJoin.Round;
+                    pen.LineJoin = LineJoin.Round;
                     g.DrawPath(pen, path);
                 }
             }

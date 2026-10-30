@@ -106,9 +106,13 @@ taskbar, darker shades on a light one. If you change the Windows theme the
 icon follows within a few seconds.
 
 You can change what the icon shows: right-click the icon, choose
-Settings..., and pick "Icon shows": Percent (the default), GHz (the current
-speed of the working cores, e.g. 3.2) or Both (percent over GHz on two
-lines, with smaller digits). The hover text always has both.
+Settings..., and pick "Icon shows": Ratio (the default, busy-core speed as
+a fraction of the rated clock, e.g. 1.0 at rated, 0.7 slower, 1.2
+boosting), Usage (CPU load, e.g. 23%), Temperature (e.g. 67C or 153F),
+Percent (the same figure as Ratio but as a plain number, e.g. 100), GHz
+(the current busy-core speed, e.g. 3.2), or any of Ratio + GHz / Usage +
+GHz / Percent + GHz (two lines, smaller digits). The hover text always has
+the percent and GHz.
 
 
 WHY ISN'T IT 100%?
@@ -255,7 +259,8 @@ COMMAND-LINE OPTIONS
                               (default 30)
   --amber=<pct>               orange below this % of rated (default 70)
   --red=<pct>                 red below this % of rated (default 40)
-  --show=<percent|ghz|both>   what the icon shows (default percent)
+  --show=<ratio|usage|temp|percent|ghz|ratio-ghz|usage-ghz|both>
+                              what the icon shows (default ratio)
   --diag                      show which counters work + live samples
   -h, --help                  show help and exit
   -v, --version               show version info and exit
