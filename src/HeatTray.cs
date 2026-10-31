@@ -66,9 +66,9 @@ internal static class HeatTray
     private const uint FILE_TYPE_CHAR = 2;
 
     internal const string Version = "2.3";
-    private const string VersionDate = "2026-10-28";
+    private const string VersionDate = "2026-10-31";
     private const string Author = "Andrew Reardon";
-    private const string AuthorEmail = "andrewreardon@gmail.com";
+    private const string ProjectUrl = "https://github.com/andrewreardon-au/HeatTray";
 
     // ---- Tunables (settings.ini / command line) ----
     private static int IntervalMs = 5000;
@@ -103,6 +103,95 @@ internal static class HeatTray
     private static string _utilSource = "none";
     private static double _ratedMhz;
 
+    // The same three readings through PDH with ENGLISH counter names. PerformanceCounter takes the
+    // category and counter names as the local language spells them, so on a non-English Windows it
+    // throws and the icon would stay a grey "?". These are only set when that route failed (or with
+    // the hidden --forcepdh, which lets an English machine exercise this path).
+    private static PdhCounter _pPerf, _pUtil, _pTemps;
+    private static int _pTempCount;
+    private static bool ForcePdh;
+
+    private const uint PdhFmtDouble = 0x200;
+    private const uint PdhMoreData = 0x800007D2;
+
+    [DllImport("pdh.dll", CharSet = CharSet.Unicode)]
+    private static extern uint PdhOpenQuery(string dataSource, IntPtr userData, out IntPtr query);
+
+    [DllImport("pdh.dll", EntryPoint = "PdhAddEnglishCounterW", CharSet = CharSet.Unicode)]
+    private static extern uint PdhAddEnglishCounter(IntPtr query, string fullCounterPath, IntPtr userData, out IntPtr counter);
+
+    [DllImport("pdh.dll")]
+    private static extern uint PdhCollectQueryData(IntPtr query);
+
+    [DllImport("pdh.dll")]
+    private static extern uint PdhGetFormattedCounterValue(IntPtr counter, uint format, out uint type, out PDH_VALUE value);
+
+    [DllImport("pdh.dll", EntryPoint = "PdhGetFormattedCounterArrayW")]
+    private static extern uint PdhGetFormattedCounterArray(IntPtr counter, uint format, ref uint bufferSize, ref uint itemCount, IntPtr buffer);
+
+    [DllImport("pdh.dll")]
+    private static extern uint PdhCloseQuery(IntPtr query);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PDH_VALUE { public uint CStatus; public double Value; }
+
+    // PDH_FMT_COUNTERVALUE_ITEM: the instance name, then the same status + value pair.
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PDH_ITEM { public IntPtr Name; public uint CStatus; public double Value; }
+
+    // One PDH counter that reads like PerformanceCounter.NextValue(): the constructor takes the
+    // priming sample, each NextValue() is the value over the time since the one before. A path with
+    // a (*) instance gives every instance through NextValues().
+    private sealed class PdhCounter
+    {
+        private IntPtr _query, _counter;
+
+        public PdhCounter(string englishPath)
+        {
+            if (PdhOpenQuery(null, IntPtr.Zero, out _query) != 0) throw new InvalidOperationException("PdhOpenQuery");
+            if (PdhAddEnglishCounter(_query, englishPath, IntPtr.Zero, out _counter) != 0)
+            {
+                PdhCloseQuery(_query);
+                throw new InvalidOperationException("PdhAddEnglishCounter " + englishPath);
+            }
+            PdhCollectQueryData(_query);
+        }
+
+        private static bool GoodStatus(uint s) { return s == 0 || s == 1; }   // PDH_CSTATUS_VALID_DATA, _NEW_DATA
+
+        public double NextValue()
+        {
+            if (PdhCollectQueryData(_query) != 0) throw new InvalidOperationException("PdhCollectQueryData");
+            uint type;
+            PDH_VALUE v;
+            if (PdhGetFormattedCounterValue(_counter, PdhFmtDouble, out type, out v) != 0 || !GoodStatus(v.CStatus))
+                throw new InvalidOperationException("PdhGetFormattedCounterValue");
+            return v.Value;
+        }
+
+        public double[] NextValues()
+        {
+            if (PdhCollectQueryData(_query) != 0) throw new InvalidOperationException("PdhCollectQueryData");
+            uint size = 0, count = 0;
+            uint r = PdhGetFormattedCounterArray(_counter, PdhFmtDouble, ref size, ref count, IntPtr.Zero);
+            if (r != PdhMoreData) return new double[0];   // no instances (or an error): nothing to read
+            IntPtr buf = Marshal.AllocHGlobal((int)size);
+            try
+            {
+                if (PdhGetFormattedCounterArray(_counter, PdhFmtDouble, ref size, ref count, buf) != 0) return new double[0];
+                var list = new List<double>();
+                int itemSize = Marshal.SizeOf(typeof(PDH_ITEM));
+                for (int i = 0; i < (int)count; i++)
+                {
+                    var item = (PDH_ITEM)Marshal.PtrToStructure(new IntPtr(buf.ToInt64() + (long)i * itemSize), typeof(PDH_ITEM));
+                    if (GoodStatus(item.CStatus)) list.Add(item.Value);
+                }
+                return list.ToArray();
+            }
+            finally { Marshal.FreeHGlobal(buf); }
+        }
+    }
+
     // ---- Live state ----
     private static readonly Queue<double> _perfRing = new Queue<double>();
     private static readonly Queue<double> _utilRing = new Queue<double>();
@@ -132,7 +221,7 @@ internal static class HeatTray
             return;
         }
 
-        ConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.ini");
+        ConfigPath = SettingsFilePath();
 
         if (!_anyCli)
         {
@@ -215,6 +304,7 @@ internal static class HeatTray
     {
         try
         {
+            if (ForcePdh) throw new InvalidOperationException();
             _cPerf = new PerformanceCounter("Processor Information", "% Processor Performance", "_Total");
             _cPerf.NextValue();
         }
@@ -222,6 +312,7 @@ internal static class HeatTray
 
         try
         {
+            if (ForcePdh) throw new InvalidOperationException();
             // Deliberately NOT "% Processor Utility": that is scaled by clock
             // speed (~ Time x Performance), so a hard throttle would push the
             // load reading under the idle gate and hide itself.
@@ -233,6 +324,7 @@ internal static class HeatTray
         {
             try
             {
+                if (ForcePdh) throw new InvalidOperationException();
                 _cUtil = new PerformanceCounter("Processor", "% Processor Time", "_Total");
                 _cUtil.NextValue();
                 _utilSource = "Processor % Processor Time (fallback)";
@@ -240,8 +332,33 @@ internal static class HeatTray
             catch { _cUtil = null; }
         }
 
+        // On a non-English Windows the names above do not exist, so the same counters are asked for by their English names.
+        if (_cPerf == null)
+        {
+            try { _pPerf = new PdhCounter(@"\Processor Information(_Total)\% Processor Performance"); }
+            catch { _pPerf = null; }
+        }
+        if (_cUtil == null)
+        {
+            try
+            {
+                _pUtil = new PdhCounter(@"\Processor Information(_Total)\% Processor Time");
+                _utilSource = "% Processor Time (PDH, English names)";
+            }
+            catch
+            {
+                try
+                {
+                    _pUtil = new PdhCounter(@"\Processor(_Total)\% Processor Time");
+                    _utilSource = "Processor % Processor Time (PDH, English names, fallback)";
+                }
+                catch { _pUtil = null; }
+            }
+        }
+
         try
         {
+            if (ForcePdh) throw new InvalidOperationException();
             var cat = new PerformanceCounterCategory("Thermal Zone Information");
             foreach (string inst in cat.GetInstanceNames())
             {
@@ -256,16 +373,46 @@ internal static class HeatTray
         }
         catch { }
 
+        if (_cTemps.Count == 0)
+        {
+            try
+            {
+                var z = new PdhCounter(@"\Thermal Zone Information(*)\Temperature");
+                int n = z.NextValues().Length;
+                if (n > 0) { _pTemps = z; _pTempCount = n; }
+            }
+            catch { _pTemps = null; }
+        }
+
         try
         {
             using (var key = Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0"))
             {
-                object v = key == null ? null : key.GetValue("~MHz");
-                if (v != null) _ratedMhz = Convert.ToDouble(v, CultureInfo.InvariantCulture);
+                _ratedMhz = RatedMhzFrom(key == null ? null : key.GetValue("~MHz"));
             }
         }
         catch { }
     }
+
+    // The rated clock from the registry value, or 0 (unknown) when it is missing or not believable: every
+    // percentage and GHz figure is scaled by it, so a junk value (0, a few MHz, a typo) must not be used.
+    // No CPU is rated under 500 MHz or over 10 GHz.
+    private static double RatedMhzFrom(object v)
+    {
+        try
+        {
+            if (v == null) return 0;
+            double m = Convert.ToDouble(v, CultureInfo.InvariantCulture);
+            return (m >= 500 && m <= 10000) ? m : 0;
+        }
+        catch { return 0; }
+    }
+
+    private static bool HavePerfCounter() { return _cPerf != null || _pPerf != null; }
+    private static bool HaveUtilCounter() { return _cUtil != null || _pUtil != null; }
+    private static double ReadPerf() { return _cPerf != null ? _cPerf.NextValue() : _pPerf.NextValue(); }
+    private static double ReadUtil() { return _cUtil != null ? _cUtil.NextValue() : _pUtil.NextValue(); }
+    private static int ThermalZoneCount() { return _cTemps.Count + _pTempCount; }
 
     // Hottest thermal zone in deg C, or NaN. The counter reports Kelvin.
     private static double ReadTempC()
@@ -273,16 +420,24 @@ internal static class HeatTray
         double best = double.NaN;
         foreach (var c in _cTemps)
         {
-            try
-            {
-                double k = c.NextValue();
-                if (k > 200 && k < 500)
-                {
-                    double t = k - 273.15;
-                    if (double.IsNaN(best) || t > best) best = t;
-                }
-            }
+            try { best = HotterC(best, c.NextValue()); }
             catch { }
+        }
+        if (_pTemps != null)
+        {
+            try { foreach (double k in _pTemps.NextValues()) best = HotterC(best, k); }
+            catch { }
+        }
+        return best;
+    }
+
+    // The hotter of best (deg C or NaN) and a reading in Kelvin; readings outside 200-500 K are ignored.
+    private static double HotterC(double best, double kelvin)
+    {
+        if (kelvin > 200 && kelvin < 500)
+        {
+            double t = kelvin - 273.15;
+            if (double.IsNaN(best) || t > best) return t;
         }
         return best;
     }
@@ -293,17 +448,17 @@ internal static class HeatTray
 
     private static void Sample()
     {
-        if (_cPerf == null || _cUtil == null)
+        if (!HavePerfCounter() || !HaveUtilCounter())
         {
-            SetTooltip("Cannot read speed\nClick for how to fix");
+            SetTooltip("Cannot read speed\nRight-click, Details");
             ApplyIcon("?", null, Tone.Neutral, Tone.Neutral);
             return;
         }
 
         try
         {
-            _lastPerf = _cPerf.NextValue() * PerfScale;
-            _lastUtil = _cUtil.NextValue();
+            _lastPerf = ReadPerf() * PerfScale;
+            _lastUtil = ReadUtil();
         }
         catch
         {
@@ -531,7 +686,7 @@ internal static class HeatTray
         // green / orange / red. Idle, the cores choose their own speed (it can be well under or
         // over the rated one), so the same figure is shown but there is nothing to judge: green,
         // unless the CPU is hot even though it is idle.
-        int shown = (int)Math.Round(Math.Min(_smoothPerf, 999));
+        int shown = PctShown(_smoothPerf, _loaded);
         double g = Ghz(_smoothPerf);
         string ghzText = double.IsNaN(g) ? "" : string.Format(" {0:0.0}GHz of {1:0.0}GHz", g, _ratedMhz / 1000.0);
         string arrow = "";
@@ -543,8 +698,9 @@ internal static class HeatTray
         bool hotIdle = !_loaded && !double.IsNaN(_lastTempC) && _lastTempC >= WarnC;
 
         // Three labelled lines (Speed / Load / CPU), short so the taskbar does not wrap them.
-        // The slow case keeps an extra action line between Load and CPU; Reckoner's "Like" tag
-        // is appended after CPU to keep the first three lines predictable.
+        // The slow case swaps the CPU line for an action line and adds Reckoner's "Like" tag: the
+        // verdict already carries the temperature, and with the CPU line too the text passes the
+        // shell's 127 characters and SetTooltip would cut the "Like" line (and its year).
         string tip = string.Format("Speed: {0}%{1}{2}\n", shown, ghzText, arrow);
         if (!_loaded)
         {
@@ -559,7 +715,7 @@ internal static class HeatTray
         {
             string verdict, action;
             SlowLines(out verdict, out action);
-            tip += "Load: " + verdict + "\n" + action + "\n" + cpuLine;
+            tip += verdict + "\n" + action;
             string like = Reckoner(_speedPct);
             if (like != null) tip += "\nLike " + like;
         }
@@ -575,7 +731,7 @@ internal static class HeatTray
         }
         else
         {
-            string ratioText = (_smoothPerf / 100.0).ToString("0.0", CultureInfo.InvariantCulture);
+            string ratioText = RatioShown(_smoothPerf, _loaded).ToString("0.0", CultureInfo.InvariantCulture);
             string tempIcon = double.IsNaN(_lastTempC) ? "?" : FmtTemp(_lastTempC);
             string usageIcon = ((int)Math.Round(Math.Min(_smoothUtil, 999))).ToString(CultureInfo.InvariantCulture) + "%";
             IconLines(IconShows, shown.ToString(CultureInfo.InvariantCulture),
@@ -583,6 +739,35 @@ internal static class HeatTray
                 ratioText, tempIcon, usageIcon, out top, out bottom);
         }
         ApplyIcon(top, bottom, tone, tone);
+    }
+
+    // The figure shown for a speed reading. Under load a reading below a colour limit must not round UP to it:
+    // 69.6 is orange, and "70%" or "0.7" next to an orange icon reads as a healthy value. Such a reading is
+    // shown one step below the limit (69, 0.6) instead. Idle readings are always green, so they round normally.
+    private static int PctShown(double perf, bool loaded)
+    {
+        int r = (int)Math.Round(Math.Min(perf, 999));
+        if (loaded)
+        {
+            foreach (double limit in new[] { AmberPct, RedPct })
+            {
+                if (perf < limit && r >= limit) r = (int)Math.Ceiling(limit) - 1;
+            }
+        }
+        return r;
+    }
+
+    private static double RatioShown(double perf, bool loaded)
+    {
+        int tenths = (int)Math.Round(Math.Min(perf, 999) / 10.0, MidpointRounding.AwayFromZero);
+        if (loaded)
+        {
+            foreach (double limit in new[] { AmberPct, RedPct })
+            {
+                if (perf < limit && tenths * 10 >= limit) tenths = (int)Math.Ceiling(limit / 10.0) - 1;
+            }
+        }
+        return tenths / 10.0;
     }
 
     // The verdict (tooltip line 2) and the action (line 3) for a loaded reading below the amber line.
@@ -788,6 +973,11 @@ internal static class HeatTray
                 int s = ParseShow(val);
                 if (s >= 0) { IconShows = s; _anyCli = true; }
             }
+            else if (string.Equals(arg, "--forcepdh", StringComparison.OrdinalIgnoreCase))
+            {
+                // hidden test seam: read the counters through PDH by English name even on an English Windows
+                ForcePdh = true;
+            }
             else if (MatchOpt(args, ref i, null, "perfscale", out val))
             {
                 // hidden test seam: no _anyCli, so it does not change which settings are loaded
@@ -804,7 +994,7 @@ internal static class HeatTray
 
     private static string UsageText()
     {
-        return "HeatTray " + Version + " - CPU heat slowdown indicator in the system tray\r\n" +
+        return "HeatTray " + Version + ": CPU heat slowdown indicator in the system tray\r\n" +
                "\r\n" +
                "Usage: HeatTray.exe [options]\r\n" +
                "\r\n" +
@@ -814,7 +1004,7 @@ internal static class HeatTray
                "  --amber=<pct>                amber when speed is below this % of rated (default 70)\r\n" +
                "  --red=<pct>                  red when speed is below this % of rated (default 40)\r\n" +
                "  --show=<ratio|usage|temp|percent|ghz|ratio-ghz|usage-ghz|both>\r\n" +
-               "                              what the icon shows (default ratio)\r\n" +
+               "                               what the icon shows (default ratio)\r\n" +
                "  --diag                       print counter availability + 5 live samples, then exit\r\n" +
                "  -h, --help                   show this help and exit\r\n" +
                "  -v, --version                show version info and exit\r\n" +
@@ -829,7 +1019,7 @@ internal static class HeatTray
     {
         return "HeatTray " + Version + " (" + VersionDate + ")\r\n" +
                "CPU heat slowdown indicator in the system tray.\r\n" +
-               Author + " <" + AuthorEmail + ">";
+               Author + "\r\n" + ProjectUrl;
     }
 
     // Compiled as /target:winexe, so there is no console by default. When
@@ -885,9 +1075,9 @@ internal static class HeatTray
         var sb = new StringBuilder();
         sb.AppendLine("HeatTray " + Version + " --diag");
         sb.AppendLine("Rated CPU speed (registry ~MHz): " + (_ratedMhz > 0 ? _ratedMhz.ToString("0") + " MHz" : "unknown"));
-        sb.AppendLine("Counter '% Processor Performance': " + (_cPerf != null ? "OK" : "MISSING (needs an English-language Windows; speed cannot be read)"));
-        sb.AppendLine("Counter load: " + (_cUtil != null ? "OK (" + _utilSource + ")" : "MISSING"));
-        sb.AppendLine("Thermal zones: " + _cTemps.Count + (_cTemps.Count == 0 ? " (none exposed; temperature will be unavailable, speed still works)" : ""));
+        sb.AppendLine("Counter '% Processor Performance': " + (_cPerf != null ? "OK" : (_pPerf != null ? "OK (read through PDH by its English name: the local-language counter names did not work)" : "MISSING (speed cannot be read; the performance counters may be switched off)")));
+        sb.AppendLine("Counter load: " + (HaveUtilCounter() ? "OK (" + _utilSource + ")" : "MISSING"));
+        sb.AppendLine("Thermal zones: " + ThermalZoneCount() + (ThermalZoneCount() == 0 ? " (none exposed; temperature will be unavailable, speed still works)" : (_cTemps.Count == 0 ? " (through PDH, English names)" : "")));
         sb.AppendLine("Taskbar theme: " + (IsLightTaskbar() ? "light" : "dark") + " (sets the icon text colours)");
         sb.AppendLine("Icon shows: " + ShowName(IconShows) + " (Settings, or --show=ratio|usage|temp|percent|ghz|ratio-ghz|usage-ghz|both)");
         sb.AppendLine("Temperature unit: " + (TempF ? "Fahrenheit (F)" : "Celsius (C)") + " (Settings; --warn is always in C)");
@@ -899,8 +1089,8 @@ internal static class HeatTray
             System.Threading.Thread.Sleep(1000);
             try
             {
-                double p = _cPerf == null ? double.NaN : _cPerf.NextValue();
-                double u = _cUtil == null ? double.NaN : _cUtil.NextValue();
+                double p = HavePerfCounter() ? ReadPerf() : double.NaN;
+                double u = HaveUtilCounter() ? ReadUtil() : double.NaN;
                 double t = ReadTempC();
                 sb.AppendLine(string.Format("  {0,5:0}   {1,5:0}   {2}", p, u, double.IsNaN(t) ? "n/a" : t.ToString("0.0") + " C"));
             }
@@ -957,7 +1147,7 @@ internal static class HeatTray
             form.MinimizeBox = false;
             form.MaximizeBox = false;
             form.ShowInTaskbar = false;
-            form.ClientSize = new Size(340, 185);
+            form.ClientSize = new Size(330, 185);
 
             var iconBox = new PictureBox
             {
@@ -966,22 +1156,35 @@ internal static class HeatTray
                 Image = Icon.ExtractAssociatedIcon(Application.ExecutablePath).ToBitmap()
             };
 
+            // Three controls so the project address can be a link: the text above it, the link, the text below it.
             var label = new Label
             {
-                Left = 62, Top = 15, Width = 265, Height = 125,
+                Left = 62, Top = 15, Width = 255, Height = 75,
                 Text = "HeatTray " + Version + " (" + VersionDate + ")\n\n" +
                        "CPU heat slowdown indicator in the system tray.\n\n" +
-                       Author + "\n" + AuthorEmail + "\n\n" +
-                       "Command-line options: HeatTray.exe -h"
+                       Author
             };
+            var projectLink = new LinkLabel { Left = 62, Top = 90, Width = 255, Height = 15, Text = ProjectUrl.Replace("https://", "") };
+            projectLink.LinkClicked += (s, e) =>
+            {
+                try { Process.Start(ProjectUrl); }
+                catch { }
+            };
+            var helpLabel = new Label { Left = 62, Top = 105, Width = 255, Height = 30, Text = "\nCommand-line options: HeatTray.exe -h" };
 
-            var okButton = new Button { Text = "OK", Left = 245, Top = 150, Width = 80, DialogResult = DialogResult.OK };
+            var okButton = new Button { Text = "OK", Left = 235, Top = 150, Width = 80, DialogResult = DialogResult.OK };
 
             form.Controls.Add(iconBox);
             form.Controls.Add(label);
+            form.Controls.Add(projectLink);
+            form.Controls.Add(helpLabel);
             form.Controls.Add(okButton);
             form.AcceptButton = okButton;
             form.CancelButton = okButton;
+            // Nothing else asks Windows to activate the dialog after a tray click, and it often declines
+            // on its own (the click came from the overflow flyout, say): ask once it is on screen.
+            form.Shown += (s, e) => form.Activate();
+            form.ActiveControl = okButton;   // not the link: Enter on a focused link opens the browser instead of closing the box
             form.ShowDialog();
         }
     }
@@ -1034,9 +1237,9 @@ internal static class HeatTray
     {
         var sb = new StringBuilder();
         sb.AppendLine("NOW");
-        if (_cPerf == null || _cUtil == null)
+        if (!HavePerfCounter() || !HaveUtilCounter())
         {
-            Row(sb, "Status:", "HeatTray cannot read the CPU speed from Windows. This usually means the performance counters are switched off or Windows is not set to English. Run HeatTray.exe --diag from a terminal to see which counter is missing.");
+            Row(sb, "Status:", "HeatTray cannot read the CPU speed from Windows. This usually means the performance counters are switched off or damaged. Run HeatTray.exe --diag from a terminal to see which counter is missing.");
         }
         else
         {
@@ -1105,7 +1308,7 @@ internal static class HeatTray
         Row(sb, "Slow, < " + FmtTemp(WarnC - 5) + ":", "not heat: check the power mode / AC power.");
         Row(sb, "No sensor:", "if this machine reports no temperature, a slow reading says the cause is unknown: check the power mode, the charger and the vents.");
         Row(sb, "Hints use:", "the hottest temperature of the last 2 minutes, not just now: a heat slowdown can outlast the heat.");
-        Row(sb, "Icon:", "your busy-core speed as a % of the CPU's rated clock, or GHz, or both: choose in Settings. Grey only while HeatTray is starting.");
+        Row(sb, "Icon:", "your busy-core speed as a ratio of the CPU's rated clock (1.0 is rated, 0.7 is 70%), or CPU usage, temperature, a percent or GHz: choose in Settings. Grey only while HeatTray is starting.");
         Row(sb, "Trend:", "the arrow in the tooltip and the Trend line above.");
         Row(sb, "Feels like:", "a tongue-in-cheek comparison of how your laptop is running right now with an old computer (100% of rated speed counts as a current laptop). Order of magnitude only, not a benchmark.");
         sb.AppendLine();
@@ -1185,6 +1388,75 @@ internal static class HeatTray
         }
     }
 
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetCurrentPackageFullName(ref int packageFullNameLength, StringBuilder packageFullName);
+
+    // True when running from an installed MSIX package (a Microsoft Store build). The install folder is
+    // then read-only and per-user files belong in LocalAppData, and "start at login" is a package setting
+    // that Windows owns rather than a Run-key entry. Same code as PingTray.
+    private static bool IsPackaged()
+    {
+        try
+        {
+            int length = 0;
+            const int AppModelErrorNoPackage = 15700;
+            return GetCurrentPackageFullName(ref length, null) != AppModelErrorNoPackage;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return false;
+        }
+    }
+
+    // Packaged: %LOCALAPPDATA%\HeatTray\settings.ini (the package folder cannot be written to). Otherwise
+    // next to the exe, so the unzipped folder stays portable.
+    private static string SettingsFilePath()
+    {
+        if (IsPackaged())
+        {
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HeatTray", "settings.ini");
+        }
+        return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.ini");
+    }
+
+    // "Start with Windows" for the unzipped build: a per-user Run-key entry that launches this exe with no
+    // options, so it resumes the settings saved from the Settings box (same as PingTray).
+    private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string RunValueName = "HeatTray";
+
+    private static bool GetRunAtLogin()
+    {
+        try
+        {
+            using (RegistryKey k = Registry.CurrentUser.OpenSubKey(RunKeyPath))
+            {
+                // Any entry counts, even one left pointing at an old folder after the exe was moved:
+                // OK then rewrites it to this exe (ticked) or removes it (unticked).
+                return k != null && k.GetValue(RunValueName) != null;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void SetRunAtLogin(bool on)
+    {
+        try
+        {
+            using (RegistryKey k = Registry.CurrentUser.CreateSubKey(RunKeyPath))
+            {
+                if (on) k.SetValue(RunValueName, "\"" + Application.ExecutablePath + "\"");
+                else k.DeleteValue(RunValueName, false);
+            }
+        }
+        catch
+        {
+            // Best-effort, like saving the settings: a locked-down profile just keeps it off.
+        }
+    }
+
     private static void LoadSettings()
     {
         try
@@ -1233,6 +1505,7 @@ internal static class HeatTray
     {
         try
         {
+            Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath));
             File.WriteAllLines(ConfigPath, new[]
             {
                 "v=3",
@@ -1283,7 +1556,7 @@ internal static class HeatTray
             form.MinimizeBox = false;
             form.MaximizeBox = false;
             form.Font = SystemFonts.MessageBoxFont;    // Segoe UI, matches the rest of Windows
-            form.ClientSize = new Size(360, 400);
+            form.ClientSize = new Size(360, 436);
 
             // Inside a GroupBox, child coordinates are relative to the group box, not the form.
             // Each row: label left=10 width=170; input right-edged at x=305 (box inner width ~ 320).
@@ -1323,34 +1596,55 @@ internal static class HeatTray
 
             // Switching the unit while the dialog is open relabels the hot box AND converts whatever
             // is currently typed, so the number keeps its meaning (85 C becomes 185 F, not stays 85 F).
+            // The unit is only the dialog's until OK: Cancel must leave the running app (tooltip, icon) as it was.
+            bool unitF = TempF;
             Label warnLabel = null;
             foreach (Control c in thresholdsGroup.Controls) { var l = c as Label; if (l != null && l.Text.StartsWith("Count as hot at ")) { warnLabel = l; break; } }
             unitBox.SelectedIndexChanged += (s, e) =>
             {
                 bool nowF = unitBox.SelectedIndex == 1;
-                if (nowF == TempF) return;
+                if (nowF == unitF) return;
                 double parsed;
                 if (TryNum(warnBox.Text.Trim(), -100, 500, out parsed))
                 {
-                    double asC = TempF ? (parsed - 32.0) * 5.0 / 9.0 : parsed;
+                    double asC = unitF ? (parsed - 32.0) * 5.0 / 9.0 : parsed;
                     double shown = nowF ? asC * 9.0 / 5.0 + 32.0 : asC;
                     warnBox.Text = ((int)Math.Round(shown)).ToString(CultureInfo.InvariantCulture);
                 }
-                TempF = nowF;
-                if (warnLabel != null) warnLabel.Text = "Count as hot at (" + TempUnit() + "):";
+                unitF = nowF;
+                if (warnLabel != null) warnLabel.Text = "Count as hot at (" + (unitF ? "F" : "C") + "):";
             };
+
+            // Start at login. The unzipped build owns this (a Run-key entry, applied with OK); in a Store
+            // build Windows owns it, so there is a link to the page where it is switched instead.
+            CheckBox startupBox = null;
+            if (IsPackaged())
+            {
+                var startupLink = new LinkLabel { Text = "Start with Windows: change in Windows Settings", Left = 15, Top = 305, Width = 330, Height = 20 };
+                startupLink.LinkClicked += (s, e) =>
+                {
+                    try { Process.Start("ms-settings:startupapps"); }
+                    catch { }
+                };
+                form.Controls.Add(startupLink);
+            }
+            else
+            {
+                startupBox = new CheckBox { Text = "Start with Windows", Left = 15, Top = 303, Width = 330, Height = 22, Checked = GetRunAtLogin() };
+                form.Controls.Add(startupBox);
+            }
 
             // The hint, which turns into the message when OK finds something wrong (see FormClosing below).
             var hint = new Label
             {
                 Name = "hint",
                 Text = "Amber and red only trigger under load, below these percentages of the CPU's rated clock. \"Hot\" affects the hints and the HOT warning only.",
-                Left = 15, Top = 305, Width = 330, Height = 48, ForeColor = SystemColors.GrayText
+                Left = 15, Top = 333, Width = 330, Height = 56, ForeColor = SystemColors.GrayText
             };
             form.Controls.Add(hint);
 
-            var okButton = new Button { Text = "OK", Left = 177, Top = 362, Width = 80, DialogResult = DialogResult.OK };
-            var cancelButton = new Button { Text = "Cancel", Left = 265, Top = 362, Width = 80, DialogResult = DialogResult.Cancel };
+            var okButton = new Button { Text = "OK", Left = 177, Top = 398, Width = 80, DialogResult = DialogResult.OK };
+            var cancelButton = new Button { Text = "Cancel", Left = 265, Top = 398, Width = 80, DialogResult = DialogResult.Cancel };
             form.Controls.Add(okButton);
             form.Controls.Add(cancelButton);
             form.AcceptButton = okButton;
@@ -1365,7 +1659,11 @@ internal static class HeatTray
             {
                 if (form.DialogResult != DialogResult.OK) return;
                 int field;
-                string problem = SettingsProblem(intervalBox.Text, warnBox.Text, gateBox.Text, amberBox.Text, redBox.Text, out field);
+                bool shownF = TempF;
+                TempF = unitF;   // SettingsProblem judges the hot box in the unit the dialog is showing
+                string problem;
+                try { problem = SettingsProblem(intervalBox.Text, warnBox.Text, gateBox.Text, amberBox.Text, redBox.Text, out field); }
+                finally { TempF = shownF; }
                 if (problem == null) return;
                 e.Cancel = true;
                 hint.Text = problem;
@@ -1389,6 +1687,8 @@ internal static class HeatTray
             // Only an OK with nothing wrong gets here (FormClosing above), so all of this parses; the
             // check is a guard, not a second set of rules.
             double interval = 0, warn = 0, gate = 0, amber = 0, red = 0;
+            bool appF = TempF;
+            TempF = unitF;   // the unit chosen in the dialog takes effect only now, on OK
             double warnMin = TempF ? 86 : 30, warnMax = TempF ? 248 : 120;
             bool ok = TryNum(intervalBox.Text.Trim(), 1, 60, out interval) &&
                       TryNum(warnBox.Text.Trim(), warnMin, warnMax, out warn) &&
@@ -1398,6 +1698,7 @@ internal static class HeatTray
 
             if (!ok || red > amber)
             {
+                TempF = appF;
                 return;
             }
 
@@ -1405,7 +1706,10 @@ internal static class HeatTray
             WarnC = DisplayToC(warn); GateUtil = gate; AmberPct = amber; RedPct = red;
             IconShows = showMap[showBox.SelectedIndex];
             _timer.Interval = IntervalMs;
-            SaveSettings();
+            if (startupBox != null) SetRunAtLogin(startupBox.Checked);
+            // Started with options: the command line described this run and settings.ini was not read,
+            // so writing it now would replace the saved settings with this run's.
+            if (!_anyCli) SaveSettings();
             Sample();
         }
     }

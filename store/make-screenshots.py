@@ -29,7 +29,7 @@ TASKBAR = [  # (source in store/shots, scale, caption, output)
 ]
 DIALOGS = [  # (source in ../screenshots, scale, caption, output)
     ("HeatTray-screenshot_details.png", 0.8, "Details: why it is slow and what to try", "screenshot-3-details.png"),
-    ("HeatTray-screenshot_settings.png", 1.4, "Set the colour limits and what the icon shows", "screenshot-4-settings.png"),
+    ("HeatTray-screenshot_settings.png", 1.3, "Set the colour limits and what the icon shows", "screenshot-4-settings.png"),
 ]
 
 font = ImageFont.truetype(FONT, 42)

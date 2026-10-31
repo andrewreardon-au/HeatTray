@@ -1,3 +1,5 @@
 # Keep the release zip (git archive) to the app itself: the store images and their scripts stay in the repo only.
 store/ export-ignore
 .gitattributes export-ignore
+rendertest/ export-ignore
+.gitignore export-ignore

@@ -118,11 +118,11 @@ def tile(img, cx, cy, size):
     ImageDraw.Draw(img).rounded_rectangle([cx - r, cy - r, cx + r, cy + r], radius=size * 0.12, fill=(52, 52, 56, 255))
 
 
-READ = {   # the tooltips the app prints (HeatTray.cs, Render/SlowLines), as captured on 28 Oct 2026
-    "g": ("98", GREEN, ["Speed 98% 3.2GHz of 3.3GHz", "Working hard, all fine", "74C | load 60%"]),
-    "o": ("59", ORANGE, ["Speed 59% 1.9GHz of 3.3GHz", "Slower, not hot (64C)", "Plug in, check power mode", "Like a Core i5-2500K from 2011"]),
-    "h": ("47", ORANGE, ["Speed 47% 1.5GHz of 3.3GHz", "Slower, and hot (99C)", "Clear vents, lift laptop", "Like a Core i5-2500K from 2011"]),
-    "r": ("27", RED, ["Speed 27% 0.9GHz of 3.3GHz", "Far slower, not hot (59C)", "Plug in, check power mode", "Like a Core 2 Duo E6600 from 2006"]),
+READ = {   # the tooltips the app prints (HeatTray.cs, Render/SlowLines, v2.3), as captured on 31 Oct 2026; the icon is the default Speed ratio
+    "g": ("0.8", GREEN, ["Speed: 79% 2.6GHz of 3.3GHz", "Load: Working hard, all fine", "CPU: 63 C, usage 62%"]),
+    "o": ("0.6", ORANGE, ["Speed: 61% 2.0GHz of 3.3GHz", "Slower, not hot (77C)", "Plug in, check power mode", "Like a Core i5-2500K from 2011"]),
+    "h": ("0.4", ORANGE, ["Speed: 41% 1.3GHz of 3.3GHz", "Slower, and hot (89C)", "Clear vents, lift laptop", "Like a Core 2 Duo E8400 from 2008"]),
+    "r": ("0.2", RED, ["Speed: 21% 0.7GHz of 3.3GHz", "Far slower, not hot (68C)", "Plug in, check power mode", "Like a Pentium 4 2.4GHz from 2002"]),
 }
 
 
@@ -144,7 +144,7 @@ def variant_b(key="g"):
     d.rounded_rectangle([sx - 120, ty + 18, sx + 120, ty + th - 18], radius=18, fill=(58, 58, 58))
     paste_number(img, text, colour, sx, cy, 190, 128, glow=22)
     d = ImageDraw.Draw(img)
-    for i, s in enumerate(("10:21 AM", "28/10/2026")):
+    for i, s in enumerate(("9:19 AM", "31/10/2026")):
         tw = d.textlength(s, font=fcap)
         d.text((1300 - tw / 2, ty + 34 + i * 62), s, font=fcap, fill=(240, 240, 240))
     tooltip(img, sx, ty - 40, lines, 46, "bc")
