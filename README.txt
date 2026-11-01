@@ -1,6 +1,6 @@
 HEATTRAY
 
-v2.3 (2026-10-31)
+v2.3.1 (2026-11-01)
 Author: Andrew Reardon
 
 HeatTray puts one number and one colour in the system tray, next to the
@@ -390,6 +390,14 @@ settings.ini still loads; if it holds the old default thresholds (amber
 values you chose are kept. If you want calibration back, v1.3 is still on
 the GitHub releases page.
 
+
+WHAT'S NEW IN v2.3.1
+
+  * Icon text is no longer clipped on the right. At the 16 px tray size the
+    last digit touched the edge of the icon while the left side had a gap;
+    the text is now centred with an even margin.
+  * HOT is easier to read. Letters (HOT, and temperatures such as 47C) get
+    more space between them and a thinner outline than digits.
 
 WHAT'S NEW IN v2.3
 

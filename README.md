@@ -1,6 +1,6 @@
 # HeatTray
 
-**v2.3** (2026-10-31) by Andrew Reardon
+**v2.3.1** (2026-11-01) by Andrew Reardon
 
 HeatTray puts one number and one colour in the system tray: how fast your CPU's working cores are running compared with the CPU's rated clock. `1.0` in green is normal. Orange or red means the CPU is slowed while it works, and the tooltip says whether heat or something else (the power mode, the charger) is the likely cause and what to try.
 
@@ -160,7 +160,7 @@ Click the icon, or right-click it > **Settings...**, to change what the icon sho
 With Fahrenheit chosen, the "hot" box is in Fahrenheit too. The `--warn` option and `settings.ini` always use Celsius.
 
 ```
-HeatTray 2.3: CPU heat slowdown indicator in the system tray
+HeatTray 2.3.1: CPU heat slowdown indicator in the system tray
 
 Usage: HeatTray.exe [options]
 
@@ -221,6 +221,11 @@ Exit the old HeatTray first (only one copy can run), then replace the exe.
 
 **From v1.x:** calibration is gone, so the number now means something different: a fraction of the CPU's rated speed, not of your own demo load. Your old `baseline.ini` is no longer read and can be deleted. Your `settings.ini` still loads; if it holds the old default thresholds (amber 85, red 70) they move to the new defaults (70 and 40), and any other values you chose are kept. If you want calibration back, [v1.3](https://github.com/andrewreardon-au/HeatTray/releases/tag/v1.3) is still on the releases page.
 
+## What's new in v2.3.1
+
+- **Icon text is no longer clipped on the right.** At the 16 px tray size the last digit touched the edge of the icon while the left side had a gap; the text is now centred with an even margin.
+- **HOT is easier to read.** Letters (HOT, and temperatures such as 47C) get more space between them and a thinner outline than digits.
+
 ## What's new in v2.3
 
 - **The icon shows a speed ratio by default.** `1.0` is the rated clock, `0.6` is 60% of it, `1.2` is boosting. The colours have not changed: orange under 70% of rated and red under 40%, under load only. A reading that is still orange is never rounded up to the limit (69.6% shows `0.6`, or `69` in Percent).
@@ -266,7 +271,7 @@ csc.exe /nologo /target:winexe /platform:x64 /out:dist\HeatTray.exe /win32icon:s
 
 `csc.exe` is the one bundled with .NET Framework 4 (`C:\Windows\Microsoft.NET\Framework64\v4.0.30319`). Or run `build.ps1`.
 
-SHA-256 of the committed `dist/HeatTray.exe` (v2.3): `CDEC0E59AB22F96DB3B3CC0F437120F5EE7F68650486E06A884088DF91A8496B`
+SHA-256 of the committed `dist/HeatTray.exe` (v2.3.1): `74442FAB1F231098289F3356D4989EE7CF17F63B4D72853BD78A4DD774CDA19D`
 
 ## License
 

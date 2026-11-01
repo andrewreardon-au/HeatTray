@@ -20,8 +20,8 @@ using Microsoft.Win32;
 [assembly: AssemblyProduct("HeatTray")]
 [assembly: AssemblyDescription("CPU heat slowdown indicator in the system tray")]
 [assembly: AssemblyCopyright("(c) 2026 Andrew Reardon")]
-[assembly: AssemblyVersion(HeatTray.Version + ".0.0")]
-[assembly: AssemblyFileVersion(HeatTray.Version + ".0.0")]
+[assembly: AssemblyVersion("2.3.1.0")]   // literal: Version has three parts now, so "Version + .0.0" would be invalid
+[assembly: AssemblyFileVersion("2.3.1.0")]
 
 internal static class HeatTray
 {
@@ -65,8 +65,8 @@ internal static class HeatTray
     private const ushort VK_RETURN = 0x0D;
     private const uint FILE_TYPE_CHAR = 2;
 
-    internal const string Version = "2.3";
-    private const string VersionDate = "2026-10-31";
+    internal const string Version = "2.3.1";
+    private const string VersionDate = "2026-11-01";
     private const string Author = "Andrew Reardon";
     private const string ProjectUrl = "https://github.com/andrewreardon-au/HeatTray";
 
@@ -1809,8 +1809,11 @@ internal static class HeatTray
             {
                 g.Clear(Color.Transparent);
                 g.SmoothingMode = SmoothingMode.AntiAlias;
+                // Without this GDI+ rasterises the path about half a pixel right and down, so at 16 px the
+                // right digit touched the last column while the left margin stayed empty.
+                g.PixelOffsetMode = PixelOffsetMode.Half;
                 // Margins and gap scale with the icon so the two-line layout stays balanced at any DPI.
-                float mx = S / 32f, pad = S / 32f * 2f, gap = S / 32f * 1.5f;
+                float mx = S / 32f * 1.5f, pad = S / 32f * 2f, gap = S / 32f * 1.5f;
                 if (bottom == null)
                 {
                     DrawFit(g, top, topColor, halo, new RectangleF(mx, pad, S - 2 * mx, S - 2 * pad));
@@ -1833,12 +1836,23 @@ internal static class HeatTray
     // space between characters, in the 100-unit em they are laid out in.
     private const float MinSqueeze = 0.85f;
     private const float InkGap = 9f;
+    // Words (HOT) are allowed to be squeezed more, spaced wider and get a thinner halo.
+    private const float WordMinSqueeze = 0.6f;
+    private const float WordInkGap = 16f;
 
     // The text as one outline path. Each character is placed by its ink, not by its advance
     // width, so a narrow "1" takes little room and "111" needs far less squeezing to fit.
+    private static bool HasLetter(string text)
+    {
+        foreach (char ch in text) if (char.IsLetter(ch)) return true;
+        return false;
+    }
+
     private static GraphicsPath TightText(string text)
     {
         var path = new GraphicsPath();
+        // Letters (HOT, 47C) need more air between them than digits, or the halo fills the gaps.
+        float gapUnits = HasLetter(text) ? WordInkGap : InkGap;
         FontStyle style = FontStyle.Regular;
         FontFamily family;
         try { family = new FontFamily("Segoe UI Semibold"); }
@@ -1859,7 +1873,7 @@ internal static class HeatTray
                         glyph.Transform(m);
                     }
                     path.AddPath(glyph, false);
-                    x += cb.Width + InkGap;
+                    x += cb.Width + gapUnits;
                 }
             }
         }
@@ -1879,7 +1893,8 @@ internal static class HeatTray
             if (text.Length == 2 && (char.IsDigit(text[0]) || text[0] == '<') && char.IsDigit(text[1]))
                 using (var rp = TightText("88")) r = rp.GetBounds();
             float fitW = box.Width / r.Width, fitH = box.Height / r.Height;
-            float sy = Math.Min(fitH, fitW / MinSqueeze);
+            bool word = HasLetter(text);
+            float sy = Math.Min(fitH, fitW / (word ? WordMinSqueeze : MinSqueeze));
             float sx = Math.Min(Math.Min(sy, fitW), box.Width / b.Width);
             using (var m = new Matrix())
             {
@@ -1888,7 +1903,7 @@ internal static class HeatTray
                 m.Translate(-(b.X + b.Width / 2f), -(r.Y + r.Height / 2f));
                 path.Transform(m);
             }
-            float stroke = Math.Max(1.25f, box.Height * 0.08f);
+            float stroke = word ? Math.Max(0.9f, box.Height * 0.05f) : Math.Max(1.25f, box.Height * 0.08f);
             if (halo.A > 0)
             {
                 using (var pen = new Pen(halo, stroke))
