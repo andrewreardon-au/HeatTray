@@ -25,9 +25,10 @@ param(
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-if (-not $IdentityName -or -not $Publisher) {
-    if ($Sideload) { $IdentityName = 'HeatTray.SideloadTest'; $Publisher = 'CN=HeatTraySideloadTest' }
-    else { throw 'Pass -IdentityName and -Publisher exactly as Partner Center shows them (Product identity page), or use -Sideload for a local test build.' }
+# A sideload build is a local test: unless the identity is given explicitly it uses a throwaway one, so the
+# test certificate never carries the real Publisher string.
+if ($Sideload -and -not $PSBoundParameters.ContainsKey('IdentityName') -and -not $PSBoundParameters.ContainsKey('Publisher')) {
+    $IdentityName = 'HeatTray.SideloadTest'; $Publisher = 'CN=HeatTraySideloadTest'
 }
 
 # 1. Build the exe
