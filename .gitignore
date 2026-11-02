@@ -10,3 +10,8 @@ process.md
 
 # Built by csc from rendertest/RenderTest.cs; not published
 rendertest/RenderTest.exe
+
+# MSIX packaging output
+store/out/
+store/stage/
+*.pfx

@@ -3,3 +3,6 @@ store/ export-ignore
 .gitattributes export-ignore
 rendertest/ export-ignore
 .gitignore export-ignore
+docs/ export-ignore
+.github/ export-ignore
+build-store.ps1 export-ignore
